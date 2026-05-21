@@ -1,0 +1,30 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+target/
+*.class
+
+# Runtime data
+storage/
+logs/
+*.log
+
+# Environment and local overrides
+.env.local
+.env.*.local
+
+# IDE and OS files
+.DS_Store
+.idea/
+.vscode/
+.claude/
+
+# Java
+*.jar
+*.war
+
+# Node package manager caches
+.npm/
+.pnpm-store/
