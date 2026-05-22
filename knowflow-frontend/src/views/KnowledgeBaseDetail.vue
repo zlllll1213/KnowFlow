@@ -137,4 +137,30 @@ function formatDate(d: string) {
 .table-title { font-size: 14px; font-weight: 600; color: var(--color-text-primary); }
 .type-badge { background: var(--color-bg); border: 1px solid var(--color-border); border-radius: 4px; padding: 2px 6px; font-size: 11px; font-weight: 600; color: var(--color-text-secondary); }
 .upload-progress { margin-top: 16px; }
+
+@media (max-width: 768px) {
+  .header-actions {
+    width: 100%;
+    align-items: stretch;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .header-actions :deep(.el-button) {
+    width: 100%;
+  }
+
+  .table-toolbar {
+    padding: 14px 16px;
+  }
+
+  .table-card {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .table-card :deep(.el-table) {
+    min-width: 720px;
+  }
+}
 </style>

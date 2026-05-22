@@ -258,4 +258,85 @@ function formatDate(d: string) {
   width: 260px; flex-shrink: 0; background: var(--color-surface);
   border-left: 1px solid var(--color-border); overflow: hidden;
 }
+
+@media (max-width: 1024px) {
+  .source-column {
+    display: none;
+  }
+}
+
+@media (max-width: 768px) {
+  .chat-layout {
+    flex-direction: column;
+    height: auto;
+    min-height: calc(100svh - 110px);
+    margin: -22px -16px -88px;
+    overflow: visible;
+  }
+
+  .chat-sidebar {
+    width: 100%;
+    max-height: 250px;
+    border-right: none;
+    border-bottom: 1px solid var(--color-border);
+    overflow: visible;
+  }
+
+  .sidebar-section {
+    padding: 14px 16px;
+  }
+
+  .sessions-section {
+    min-height: 0;
+    max-height: 170px;
+  }
+
+  .session-list {
+    max-height: 116px;
+  }
+
+  .session-item {
+    padding: 8px 9px;
+  }
+
+  .chat-main {
+    min-height: calc(100svh - 360px);
+  }
+
+  .chat-header {
+    padding: 14px 16px 12px;
+  }
+
+  .messages-wrap {
+    min-height: 220px;
+    padding: 16px;
+    gap: 12px;
+  }
+
+  .input-area {
+    padding: 12px 16px calc(14px + env(safe-area-inset-bottom));
+    gap: 8px;
+  }
+
+  .send-btn {
+    width: 46px;
+    height: 72px;
+  }
+}
+
+@media (max-width: 480px) {
+  .chat-sidebar {
+    max-height: 232px;
+  }
+
+  .section-label {
+    font-size: 10px;
+  }
+
+  .chat-welcome {
+    min-height: 280px;
+    padding: 20px;
+    text-align: center;
+  }
+}
 </style>

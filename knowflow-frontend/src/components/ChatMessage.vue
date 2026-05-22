@@ -46,4 +46,24 @@ function formatTime(d: string) {
 .assistant .bubble { background: var(--color-surface); border: 1px solid var(--color-border); color: var(--color-text-primary); border-radius: 2px 12px 12px 12px; }
 .user .bubble { background: var(--color-accent); color: #fff; border-radius: 12px 2px 12px 12px; }
 .time { font-size: 11px; color: var(--color-text-muted); padding: 0 4px; }
+
+@media (max-width: 560px) {
+  .message {
+    gap: 9px;
+  }
+
+  .avatar {
+    width: 30px;
+    height: 30px;
+  }
+
+  .bubble-wrap {
+    max-width: calc(100% - 42px);
+  }
+
+  .bubble {
+    padding: 9px 12px;
+    font-size: 13px;
+  }
+}
 </style>

@@ -54,4 +54,14 @@ function onFileChange(e: Event) {
 .upload-text { font-size: 14px; color: var(--color-text-secondary); margin-bottom: 4px; }
 .link { color: var(--color-accent); font-weight: 500; }
 .upload-hint { font-size: 12px; color: var(--color-text-muted); }
+
+@media (max-width: 480px) {
+  .upload-area {
+    padding: 30px 16px;
+  }
+
+  .upload-text {
+    line-height: 1.5;
+  }
+}
 </style>

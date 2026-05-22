@@ -124,4 +124,15 @@ async function handleSave() {
 .empty-icon { font-size: 48px; color: var(--color-border); }
 .empty-state p { font-size: 15px; }
 .kb-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 20px; }
+
+@media (max-width: 560px) {
+  .empty-state {
+    padding: 56px 18px;
+  }
+
+  .kb-grid {
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+}
 </style>

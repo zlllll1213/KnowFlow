@@ -73,4 +73,21 @@ function formatDate(d: string) {
 .kb-desc { font-size: 13px; color: var(--color-text-secondary); line-height: 1.5; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .kb-footer { display: flex; align-items: center; justify-content: space-between; padding-top: 12px; border-top: 1px solid var(--color-border); }
 .kb-meta { display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--color-text-muted); }
+
+@media (max-width: 480px) {
+  .kb-card {
+    padding: 16px;
+    gap: 10px;
+  }
+
+  .kb-card:hover {
+    transform: none;
+  }
+
+  .kb-footer {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 6px;
+  }
+}
 </style>

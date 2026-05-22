@@ -26,7 +26,7 @@
   --shadow-lg: 0 8px 32px rgba(0,0,0,.12);
 }
 
-html, body { height: 100%; font-family: var(--font-body); background: var(--color-bg); color: var(--color-text-primary); }
+html, body { height: 100%; font-family: var(--font-body); background: var(--color-bg); color: var(--color-text-primary); overflow-x: hidden; }
 #app { height: 100%; }
 
 h1, h2, h3, h4, h5, h6 { font-family: var(--font-heading); font-weight: 600; }
@@ -59,3 +59,40 @@ h1, h2, h3, h4, h5, h6 { font-family: var(--font-heading); font-weight: 600; }
 
 .el-button--primary { background: var(--color-accent) !important; border-color: var(--color-accent) !important; }
 .el-button--primary:hover { background: #4338ca !important; border-color: #4338ca !important; }
+
+@media (max-width: 768px) {
+  .page-header {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 14px;
+    margin-bottom: 20px;
+  }
+
+  .page-header > div:last-child:not(:first-child) {
+    width: 100%;
+  }
+
+  .page-title {
+    font-size: 21px;
+    line-height: 1.25;
+  }
+
+  .page-subtitle {
+    font-size: 13px;
+    line-height: 1.45;
+    word-break: break-word;
+  }
+
+  .card {
+    border-radius: var(--radius-md);
+  }
+
+  .el-dialog {
+    --el-dialog-width: min(92vw, 520px) !important;
+    margin: 8vh auto 0 !important;
+  }
+
+  .el-message-box {
+    width: min(92vw, 420px) !important;
+  }
+}

@@ -124,4 +124,35 @@ function formatDate(d: string) {
 .item-name { font-size: 13px; font-weight: 500; color: var(--color-text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .item-meta { font-size: 12px; color: var(--color-text-muted); margin-top: 2px; }
 .panel-more { display: block; text-align: right; font-size: 12px; color: var(--color-accent); text-decoration: none; margin-top: 12px; }
+
+@media (max-width: 1024px) {
+  .stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .dashboard-grid { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 560px) {
+  .stat-grid {
+    grid-template-columns: 1fr;
+    gap: 12px;
+    margin-bottom: 18px;
+  }
+
+  .stat-card {
+    padding: 16px;
+    gap: 14px;
+  }
+
+  .stat-icon {
+    width: 42px;
+    height: 42px;
+    border-radius: 10px;
+    font-size: 19px;
+  }
+
+  .stat-value { font-size: 24px; }
+  .dashboard-grid { gap: 14px; }
+  .panel { padding: 16px; }
+  .list-item { align-items: flex-start; }
+  .status-badge { flex-shrink: 0; }
+}
 </style>

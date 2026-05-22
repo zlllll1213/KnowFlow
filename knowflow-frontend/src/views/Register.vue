@@ -133,4 +133,85 @@ async function handleRegister() {
 .submit-btn { width: 100%; margin-top: 4px; height: 44px; font-size: 15px; font-weight: 600; }
 .card-footer { text-align: center; margin-top: 20px; font-size: 14px; color: var(--color-text-secondary); }
 .card-footer a { color: var(--color-accent); text-decoration: none; font-weight: 500; }
+
+@media (max-width: 820px) {
+  .auth-page {
+    min-height: 100svh;
+    height: auto;
+    flex-direction: column;
+    background: var(--color-bg);
+  }
+
+  .auth-left {
+    flex: none;
+    min-height: 240px;
+    padding: 34px 24px 30px;
+    align-items: flex-end;
+  }
+
+  .hero-content {
+    max-width: 100%;
+  }
+
+  .hero-badge {
+    margin-bottom: 14px;
+  }
+
+  .hero-content h1 {
+    font-size: 30px;
+    margin-bottom: 10px;
+  }
+
+  .hero-content p {
+    font-size: 14px;
+    line-height: 1.6;
+    margin-bottom: 18px;
+  }
+
+  .hero-steps {
+    gap: 10px;
+  }
+
+  .step {
+    font-size: 13px;
+    gap: 10px;
+  }
+
+  .step-num {
+    font-size: 17px;
+  }
+
+  .auth-right {
+    width: 100%;
+    padding: 28px 22px 34px;
+    align-items: flex-start;
+  }
+
+  .auth-card {
+    max-width: none;
+  }
+
+  .card-brand {
+    margin-bottom: 24px;
+  }
+}
+
+@media (max-width: 480px) {
+  .auth-left {
+    min-height: 190px;
+    padding: 28px 20px 24px;
+  }
+
+  .hero-steps {
+    display: none;
+  }
+
+  .hero-content h1 {
+    font-size: 28px;
+  }
+
+  .auth-right {
+    padding: 24px 18px 32px;
+  }
+}
 </style>

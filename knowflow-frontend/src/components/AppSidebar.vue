@@ -102,4 +102,62 @@ function handleLogout() {
   display: flex; align-items: center; transition: color .15s;
 }
 .logout-btn:hover { color: #94a3b8; }
+
+@media (max-width: 768px) {
+  .sidebar {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 30;
+    width: 100%;
+    min-width: 0;
+    height: 70px;
+    background: rgba(15, 23, 42, .98);
+    border-top: 1px solid rgba(255,255,255,.08);
+    box-shadow: 0 -10px 28px rgba(15, 23, 42, .18);
+    backdrop-filter: blur(14px);
+  }
+
+  .sidebar-logo,
+  .sidebar-footer {
+    display: none;
+  }
+
+  .nav-list {
+    flex: none;
+    height: 100%;
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 2px;
+    padding: 7px 6px calc(7px + env(safe-area-inset-bottom));
+  }
+
+  .nav-list li {
+    min-width: 0;
+  }
+
+  .nav-item {
+    height: 56px;
+    flex-direction: column;
+    justify-content: center;
+    gap: 4px;
+    padding: 6px 2px;
+    border-radius: 10px;
+    font-size: 11px;
+    line-height: 1.1;
+    text-align: center;
+  }
+
+  .nav-item span {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .nav-icon {
+    font-size: 17px;
+  }
+}
 </style>

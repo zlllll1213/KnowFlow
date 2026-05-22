@@ -144,4 +144,31 @@ function formatDate(d: string) {
 @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 .upload-progress { margin-top: 16px; }
 .progress-label { font-size: 13px; color: var(--color-text-secondary); margin-bottom: 8px; }
+
+@media (max-width: 768px) {
+  .header-actions {
+    width: 100%;
+    align-items: stretch;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .header-actions :deep(.el-select),
+  .header-actions :deep(.el-button) {
+    width: 100% !important;
+  }
+
+  .empty-state {
+    padding: 56px 18px;
+  }
+
+  .table-card {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .table-card :deep(.el-table) {
+    min-width: 760px;
+  }
+}
 </style>
