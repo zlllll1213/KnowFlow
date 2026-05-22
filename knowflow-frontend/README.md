@@ -1,6 +1,8 @@
-# KnowFlow 智能知识库前端
+# KnowFlow Frontend
 
-基于 RAG 的智能知识库问答平台前端，支持文档上传、解析状态追踪、AI 问答等功能。
+KnowFlow 智能知识库问答平台 — Vue 3 前端应用。
+
+---
 
 ## 技术栈
 
@@ -14,67 +16,109 @@
 | Vue Router | ^4.3 |
 | Axios | ^1.6 |
 
+---
+
 ## 目录结构
 
 ```
 src/
-├── api/          # Axios 封装 + 各模块接口
-├── assets/       # 全局样式
+├── api/          # Axios 封装 + 各模块接口定义
+├── assets/       # 全局样式、静态资源
 ├── components/   # 公共组件
-├── layouts/      # 页面布局
-├── router/       # 路由配置 + 守卫
+├── layouts/      # 页面布局（侧边栏 + 顶栏）
+├── router/       # 路由配置 + 路由守卫
 ├── stores/       # Pinia 状态管理
 ├── types/        # TypeScript 类型定义
-├── utils/        # 工具函数（token）
+├── utils/        # 工具函数（token 管理等）
 └── views/        # 页面组件
+    ├── Login.vue
+    ├── Register.vue
+    ├── Dashboard.vue
+    ├── KnowledgeBaseList.vue
+    ├── KnowledgeBaseDetail.vue
+    ├── DocumentManage.vue
+    ├── Chat.vue
+    └── Settings.vue
 ```
 
-## 启动命令
+---
+
+## 本地启动
+
+### 前置条件
+
+- Node.js 18+
+- 后端服务运行在 `http://localhost:8081`（见 [../knowflow-backend/README.md](../knowflow-backend/README.md)）
+
+### 安装与启动
 
 ```bash
 # 安装依赖
 npm install
 
-# 开发模式
+# 开发模式（默认端口 5173）
 npm run dev
 
 # 生产构建
 npm run build
+
+# 预览生产构建
+npm run preview
 ```
 
+---
+
 ## 环境变量
+
+在项目根目录创建 `.env.local` 文件覆盖默认配置：
+
+```env
+VITE_API_BASE_URL=http://localhost:8081
+```
 
 | 变量 | 说明 | 默认值 |
 |------|------|--------|
 | `VITE_API_BASE_URL` | 后端 API 地址 | `http://localhost:8081` |
 
-## 页面功能说明
+开发模式下 Vite 会通过 proxy 将 `/api` 请求转发至后端，无需手动配置跨域。
 
-| 路由 | 页面 | 功能 |
-|------|------|------|
-| `/login` | 登录 | JWT 登录，保存 token |
+---
+
+## 页面功能
+
+| 路由 | 页面 | 功能说明 |
+|------|------|----------|
+| `/login` | 登录 | JWT 登录，自动持久化 token |
 | `/register` | 注册 | 用户注册，密码一致性校验 |
-| `/dashboard` | 工作台 | 统计卡片、最近文档、最近会话 |
+| `/dashboard` | 工作台 | 统计概览、最近文档 / 聊天会话 |
 | `/kb` | 知识库列表 | 增删改查知识库 |
 | `/kb/:id` | 知识库详情 | 文档列表、上传文档、进入问答 |
-| `/documents` | 文档管理 | 跨知识库文档管理、状态追踪 |
-| `/chat` | 智能问答 | 三栏布局（会话/对话/来源），SSE 预留 |
+| `/documents` | 文档管理 | 跨知识库文档管理、解析状态追踪 |
+| `/chat` | 智能问答 | 三栏布局（会话列表 / 对话 / 来源引用） |
 | `/settings` | 系统设置 | 用户信息、功能规划 |
+
+---
 
 ## 后端接口依赖
 
-后端运行于 `http://localhost:8081`，主要接口：
-- `POST /api/auth/login` — 登录
-- `POST /api/auth/register` — 注册
-- `GET /api/kb/list` — 知识库列表
-- `POST /api/document/upload` — 上传文档
-- `POST /api/chat/ask` — 智能问答
+| 接口 | 说明 |
+|------|------|
+| `POST /api/auth/login` | 登录获取 JWT |
+| `POST /api/auth/register` | 用户注册 |
+| `GET /api/kb/list` | 知识库列表 |
+| `POST /api/document/upload` | 上传文档（multipart/form-data） |
+| `GET /api/document/{id}/status` | 文档解析状态轮询 |
+| `POST /api/chat/ask` | 智能问答 |
 
-详见 `../knowflow-backend/API.md`。
+完整接口文档见 [../knowflow-backend/API.md](../knowflow-backend/API.md)。
+
+---
 
 ## 后续规划
 
-- **SSE 流式输出**：`/api/chat/ask` 改为 SSE，前端逐字追加回答内容
-- **引用来源展示**：将后端返回的 `DocumentChunk` 在右侧 SourcePanel 实时展示
-- **文档解析进度实时刷新**：通过轮询或 WebSocket 推送 `PARSING → EMBEDDING → DONE` 状态变化
-- **全文检索**：跨知识库关键词搜索
+| 功能 | 说明 |
+|------|------|
+| SSE 流式输出 | `/api/chat/ask` 改为 SSE，前端逐字追加回答内容 |
+| 引用来源展示 | 将后端返回的 `DocumentChunk` 在右侧 SourcePanel 实时展示 |
+| 解析状态实时推送 | 通过轮询或 WebSocket 推送 `PARSING → EMBEDDING → DONE` 状态变化 |
+| 全文检索 | 跨知识库关键词搜索 |
