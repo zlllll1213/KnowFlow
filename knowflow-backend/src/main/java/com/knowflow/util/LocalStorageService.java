@@ -1,6 +1,7 @@
 package com.knowflow.util;
 
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -11,12 +12,13 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 
 /**
- * 本地文件存储实现 — 第一版使用本地目录。
- * 后续可替换为 MinIO 实现（实现 MinioStorageService 接口即可）。
+ * 本地文件存储实现。
+ * 当 storage.type=local 时生效。
  */
 @Slf4j
 @Component
-public class LocalStorageService implements MinioStorageService {
+@ConditionalOnProperty(name = "storage.type", havingValue = "local", matchIfMissing = true)
+public class LocalStorageService implements FileStorageService {
 
     private static final String BASE_DIR = "./storage";
 

@@ -15,6 +15,7 @@ public class DocumentVO {
     private String fileType;
     private Long fileSize;
     private String status;
+    private Integer chunkCount;
     private String errorMessage;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;

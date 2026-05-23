@@ -8,17 +8,13 @@ import com.knowflow.mapper.DocumentMapper;
 import com.knowflow.mapper.KnowledgeBaseMapper;
 import com.knowflow.service.DocumentService;
 import com.knowflow.service.TaskService;
+import com.knowflow.util.FileStorageService;
 import com.knowflow.vo.DocumentVO;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
-import java.io.File;
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.List;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -31,31 +27,35 @@ public class DocumentServiceImpl implements DocumentService {
     private final DocumentMapper documentMapper;
     private final KnowledgeBaseMapper kbMapper;
     private final TaskService taskService;
-
-    /** 本地存储根目录 */
-    private static final String STORAGE_DIR = "./storage";
+    private final FileStorageService fileStorageService;
 
     @Override
     public DocumentVO upload(Long userId, Long kbId, MultipartFile file) {
-        // 校验知识库归属
         checkKbOwnership(userId, kbId);
 
-        // 保存文件到本地
-        String storedPath = saveToLocal(file);
+        String originalName = file.getOriginalFilename();
+        String objectKey = buildObjectKey(userId, kbId, originalName);
+
+        // 通过 FileStorageService 保存文件（本地或 MinIO）
+        String storedPath = fileStorageService.upload(file, objectKey);
 
         // 创建文档记录
         Document doc = new Document();
         doc.setKbId(kbId);
         doc.setUserId(userId);
-        doc.setFileName(file.getOriginalFilename());
+        doc.setFileName(originalName);
         doc.setFilePath(storedPath);
         doc.setFileSize(file.getSize());
-        doc.setFileType(getExtension(file.getOriginalFilename()));
+        doc.setFileType(getExtension(originalName));
         doc.setStatus("UPLOADED");
+        doc.setChunkCount(0);
         documentMapper.insert(doc);
 
-        // 创建解析任务
+        // 创建解析任务，推入 Redis 队列
         taskService.createParseTask(doc.getId(), kbId);
+
+        log.info("文档上传完成: docId={}, kbId={}, file={}, size={}",
+                doc.getId(), kbId, originalName, file.getSize());
 
         return toVO(doc);
     }
@@ -113,23 +113,14 @@ public class DocumentServiceImpl implements DocumentService {
         return doc;
     }
 
-    private String saveToLocal(MultipartFile file) {
-        try {
-            Path dir = Paths.get(STORAGE_DIR);
-            if (!Files.exists(dir)) {
-                Files.createDirectories(dir);
-            }
-
-            String originalName = file.getOriginalFilename();
-            String storedName = UUID.randomUUID() + "_" + (originalName != null ? originalName : "file");
-            Path target = dir.resolve(storedName);
-            file.transferTo(target.toFile());
-
-            log.info("文件已保存到: {}", target.toAbsolutePath());
-            return target.toString();
-        } catch (IOException e) {
-            throw new BusinessException(50001, "文件保存失败: " + e.getMessage());
-        }
+    /**
+     * 构建存储 object key。
+     * 格式: {userId}/{kbId}/{uuid}_{originalName}
+     */
+    private String buildObjectKey(Long userId, Long kbId, String originalName) {
+        String uuid = UUID.randomUUID().toString().substring(0, 8);
+        String safeName = (originalName != null) ? originalName : "file";
+        return String.format("%d/%d/%s_%s", userId, kbId, uuid, safeName);
     }
 
     private String getExtension(String filename) {
@@ -147,6 +138,7 @@ public class DocumentServiceImpl implements DocumentService {
                 .fileType(doc.getFileType())
                 .fileSize(doc.getFileSize())
                 .status(doc.getStatus())
+                .chunkCount(doc.getChunkCount())
                 .errorMessage(doc.getErrorMessage())
                 .createdAt(doc.getCreatedAt())
                 .updatedAt(doc.getUpdatedAt())
