@@ -11,6 +11,7 @@ export interface ChatMessageVO {
   id: number
   role: 'user' | 'assistant'
   content: string
+  sources?: RagSourceChunk[]
   createdAt: string
 }
 
@@ -20,9 +21,15 @@ export interface ChatAskRequest {
   question: string
 }
 
-export interface SourceChunk {
-  id: number
-  content: string
+/** 引用来源片段（与后端 RagSourceChunk 对齐） */
+export interface RagSourceChunk {
+  chunkId: number
+  documentId: number
   fileName: string
-  score?: number
+  chunkIndex: number
+  content: string
+  score: number
 }
+
+/** @deprecated 使用 RagSourceChunk */
+export type SourceChunk = RagSourceChunk

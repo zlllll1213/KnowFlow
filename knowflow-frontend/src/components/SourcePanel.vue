@@ -10,7 +10,7 @@
       <p>发送问题后，<br>引用片段将显示在此</p>
     </div>
     <div v-else class="source-list">
-      <div v-for="(s, i) in sources" :key="s.id" class="source-item">
+      <div v-for="(s, i) in sources" :key="s.chunkId || i" class="source-item">
         <div class="source-meta">
           <span class="source-idx">{{ i + 1 }}</span>
           <span class="source-file">{{ s.fileName }}</span>
@@ -23,8 +23,8 @@
 </template>
 
 <script setup lang="ts">
-import type { SourceChunk } from '@/types/chat'
-defineProps<{ sources: SourceChunk[] }>()
+import type { RagSourceChunk } from '@/types/chat'
+defineProps<{ sources: RagSourceChunk[] }>()
 </script>
 
 <style scoped>

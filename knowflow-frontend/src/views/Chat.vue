@@ -92,7 +92,7 @@ import SourcePanel from '@/components/SourcePanel.vue'
 import { getKbList } from '@/api/kb'
 import { createSession, listSessions, askQuestion, getChatHistory } from '@/api/chat'
 import type { KbVO } from '@/types/kb'
-import type { ChatSessionVO, ChatMessageVO, SourceChunk } from '@/types/chat'
+import type { ChatSessionVO, ChatMessageVO, RagSourceChunk } from '@/types/chat'
 
 const route = useRoute()
 const kbs = ref<KbVO[]>([])
@@ -102,7 +102,7 @@ const currentSession = ref<ChatSessionVO | null>(null)
 const messages = ref<ChatMessageVO[]>([])
 const inputText = ref('')
 const answering = ref(false)
-const sources = ref<SourceChunk[]>([])
+const sources = ref<RagSourceChunk[]>([])
 const messagesRef = ref<HTMLElement>()
 
 const currentKbName = computed(() => kbs.value.find(k => k.id === selectedKbId.value)?.name ?? '')
@@ -169,10 +169,8 @@ async function sendMessage() {
       question,
     })
     messages.value.push(reply)
-    // TODO: replace with actual sources from SSE response
-    sources.value = [
-      { id: 1, content: '根据文档内容，该问题的相关片段将在此展示。', fileName: '示例文档.pdf', score: 0.92 },
-    ]
+    // 使用后端返回的真实引用来源
+    sources.value = reply.sources ?? []
     scrollToBottom()
   } catch (e: any) {
     ElMessage.error(e.message || '问答失败')
