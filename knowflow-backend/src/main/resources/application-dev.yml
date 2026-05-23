@@ -1,0 +1,49 @@
+# ============================================================
+# KnowFlow 开发环境配置
+# 激活方式: spring.profiles.active=dev (默认)
+# ============================================================
+
+spring:
+  datasource:
+    driver-class-name: org.postgresql.Driver
+    url: jdbc:postgresql://${KNOWFLOW_DB_HOST:localhost}:${KNOWFLOW_DB_PORT:5432}/${KNOWFLOW_DB_NAME:knowflow}
+    username: ${KNOWFLOW_DB_USER:knowflow}
+    password: ${KNOWFLOW_DB_PASSWORD:knowflow123}
+
+  data:
+    redis:
+      host: ${KNOWFLOW_REDIS_HOST:localhost}
+      port: ${KNOWFLOW_REDIS_PORT:6379}
+      timeout: 3000ms
+
+# MyBatis-Plus SQL 日志（开发环境开启）
+mybatis-plus:
+  configuration:
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+
+# JWT 配置
+jwt:
+  secret: ${KNOWFLOW_JWT_SECRET:KnowFlow-Dev-JWT-Secret-Key-2024-Must-Be-256-Bits-Long!!}
+  expiration: ${KNOWFLOW_JWT_EXPIRATION_MS:86400000}
+
+# MinIO 配置
+minio:
+  endpoint: ${KNOWFLOW_MINIO_ENDPOINT:http://localhost:9000}
+  access-key: ${KNOWFLOW_MINIO_ACCESS_KEY:minioadmin}
+  secret-key: ${KNOWFLOW_MINIO_SECRET_KEY:minioadmin123}
+  bucket: ${KNOWFLOW_MINIO_BUCKET:knowflow}
+
+# 存储配置
+storage:
+  type: ${KNOWFLOW_STORAGE_TYPE:local}
+  local-path: ${KNOWFLOW_STORAGE_LOCAL_PATH:./storage}
+
+# Go RAG Service
+knowflow:
+  rag:
+    base-url: ${KNOWFLOW_RAG_BASE_URL:http://localhost:8090}
+
+# 详细日志
+logging:
+  level:
+    com.knowflow: DEBUG

@@ -20,12 +20,9 @@ public class DocumentChunk {
 
     private String content;
 
-    /** 文本向量，后续替换为 pgvector VECTOR 类型 */
+    /** 文本向量，pgvector VECTOR(1536) 类型 */
     private String embedding;
 
     @TableField(fill = FieldFill.INSERT)
     private LocalDateTime createdAt;
-
-    @TableField(fill = FieldFill.INSERT_UPDATE)
-    private LocalDateTime updatedAt;
 }

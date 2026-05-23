@@ -16,7 +16,7 @@ public class ParseTask {
 
     private Long kbId;
 
-    /** PENDING / PROCESSING / DONE / FAILED */
+    /** PENDING / PROCESSING / DONE / FAILED / CANCELLED */
     private String status;
 
     private String errorMessage;

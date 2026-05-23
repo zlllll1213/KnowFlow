@@ -1,0 +1,51 @@
+# ============================================================
+# KnowFlow 生产环境配置（示例）
+# 激活方式: SPRING_PROFILES_ACTIVE=prod
+# 生产环境所有敏感信息必须通过环境变量注入
+# ============================================================
+
+spring:
+  datasource:
+    driver-class-name: org.postgresql.Driver
+    url: jdbc:postgresql://${KNOWFLOW_DB_HOST}:${KNOWFLOW_DB_PORT:5432}/${KNOWFLOW_DB_NAME}
+    username: ${KNOWFLOW_DB_USER}
+    password: ${KNOWFLOW_DB_PASSWORD}
+
+  data:
+    redis:
+      host: ${KNOWFLOW_REDIS_HOST}
+      port: ${KNOWFLOW_REDIS_PORT:6379}
+      timeout: 5000ms
+      lettuce:
+        pool:
+          max-active: 8
+          max-idle: 8
+          min-idle: 2
+
+# JWT 配置（生产环境务必使用强随机密钥）
+jwt:
+  secret: ${KNOWFLOW_JWT_SECRET}
+  expiration: ${KNOWFLOW_JWT_EXPIRATION_MS:86400000}
+
+# MinIO 配置
+minio:
+  endpoint: ${KNOWFLOW_MINIO_ENDPOINT}
+  access-key: ${KNOWFLOW_MINIO_ACCESS_KEY}
+  secret-key: ${KNOWFLOW_MINIO_SECRET_KEY}
+  bucket: ${KNOWFLOW_MINIO_BUCKET}
+
+# 存储配置（生产环境使用 minio）
+storage:
+  type: ${KNOWFLOW_STORAGE_TYPE:minio}
+  local-path: ${KNOWFLOW_STORAGE_LOCAL_PATH:/data/knowflow/storage}
+
+# Go RAG Service
+knowflow:
+  rag:
+    base-url: ${KNOWFLOW_RAG_BASE_URL}
+
+# 生产日志级别
+logging:
+  level:
+    com.knowflow: WARN
+    org.springframework.security: WARN

@@ -27,6 +27,9 @@ public class Document {
     /** UPLOADED / PARSING / EMBEDDING / DONE / FAILED */
     private String status;
 
+    /** 已完成的切片数量 */
+    private Integer chunkCount;
+
     private String errorMessage;
 
     @TableLogic

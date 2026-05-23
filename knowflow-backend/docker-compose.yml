@@ -2,40 +2,55 @@ version: "3.8"
 
 services:
   postgres:
-    image: postgres:16-alpine
+    image: pgvector/pgvector:pg16
     container_name: knowflow-postgres
     environment:
-      POSTGRES_DB: knowflow
-      POSTGRES_USER: knowflow
-      POSTGRES_PASSWORD: knowflow123
+      POSTGRES_DB: ${POSTGRES_DB:-knowflow}
+      POSTGRES_USER: ${POSTGRES_USER:-knowflow}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-knowflow123}
     ports:
-      - "5432:5432"
+      - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./sql/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-knowflow} -d ${POSTGRES_DB:-knowflow}"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
     restart: unless-stopped
 
   redis:
     image: redis:7-alpine
     container_name: knowflow-redis
     ports:
-      - "6379:6379"
+      - "${REDIS_PORT:-6379}:6379"
     volumes:
       - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
     restart: unless-stopped
 
   minio:
     image: minio/minio:latest
     container_name: knowflow-minio
     environment:
-      MINIO_ROOT_USER: minioadmin
-      MINIO_ROOT_PASSWORD: minioadmin123
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin123}
     ports:
-      - "9000:9000"
-      - "9001:9001"
+      - "${MINIO_API_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
     command: server /data --console-address ":9001"
     volumes:
       - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
     restart: unless-stopped
 
 volumes:

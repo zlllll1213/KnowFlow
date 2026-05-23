@@ -23,6 +23,9 @@ public class ChatMessage {
 
     private String content;
 
+    /** 引用来源 SourceChunk JSON 数组 */
+    private String sources;
+
     @TableField(fill = FieldFill.INSERT)
     private LocalDateTime createdAt;
 }
