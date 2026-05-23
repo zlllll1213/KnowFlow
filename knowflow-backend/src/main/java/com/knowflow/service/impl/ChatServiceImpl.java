@@ -1,9 +1,12 @@
 package com.knowflow.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.knowflow.common.BusinessException;
 import com.knowflow.dto.ChatAskRequest;
 import com.knowflow.dto.ChatSessionCreateRequest;
+import com.knowflow.dto.RagResponse;
 import com.knowflow.entity.ChatMessage;
 import com.knowflow.entity.ChatSession;
 import com.knowflow.entity.KnowledgeBase;
@@ -14,11 +17,14 @@ import com.knowflow.service.ChatService;
 import com.knowflow.util.RagClient;
 import com.knowflow.vo.ChatMessageVO;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
+import java.util.Collections;
 import java.util.List;
 import java.util.stream.Collectors;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class ChatServiceImpl implements ChatService {
@@ -27,6 +33,7 @@ public class ChatServiceImpl implements ChatService {
     private final ChatMessageMapper messageMapper;
     private final KnowledgeBaseMapper kbMapper;
     private final RagClient ragClient;
+    private final ObjectMapper objectMapper;
 
     @Override
     public ChatSession createSession(Long userId, ChatSessionCreateRequest request) {
@@ -68,10 +75,13 @@ public class ChatServiceImpl implements ChatService {
         userMsg.setUserId(userId);
         userMsg.setRole("user");
         userMsg.setContent(request.getQuestion());
+        userMsg.setSources("[]");
         messageMapper.insert(userMsg);
 
-        // 调用 RAG 获取回答（当前为模拟）
-        String answer = ragClient.mockAsk(request.getQuestion(), request.getKbId());
+        // 调用 Go RAG Service（不可用时自动降级 mock）
+        RagResponse ragResponse = ragClient.ask(request.getKbId(), request.getQuestion(), 5);
+        String answer = ragResponse.getAnswer();
+        String sourcesJson = serializeSources(ragResponse);
 
         // 保存助手回答
         ChatMessage assistantMsg = new ChatMessage();
@@ -80,6 +90,7 @@ public class ChatServiceImpl implements ChatService {
         assistantMsg.setUserId(userId);
         assistantMsg.setRole("assistant");
         assistantMsg.setContent(answer);
+        assistantMsg.setSources(sourcesJson);
         messageMapper.insert(assistantMsg);
 
         // 更新会话时间
@@ -89,6 +100,7 @@ public class ChatServiceImpl implements ChatService {
                 .id(assistantMsg.getId())
                 .role(assistantMsg.getRole())
                 .content(assistantMsg.getContent())
+                .sources(ragResponse.getSources())
                 .createdAt(assistantMsg.getCreatedAt())
                 .build();
     }
@@ -110,9 +122,36 @@ public class ChatServiceImpl implements ChatService {
                         .id(m.getId())
                         .role(m.getRole())
                         .content(m.getContent())
+                        .sources(deserializeSources(m.getSources()))
                         .createdAt(m.getCreatedAt())
                         .build())
                 .collect(Collectors.toList());
+    }
+
+    // ---------- 序列化辅助 ----------
+
+    private String serializeSources(RagResponse ragResponse) {
+        try {
+            return objectMapper.writeValueAsString(ragResponse.getSources());
+        } catch (JsonProcessingException e) {
+            log.warn("sources 序列化失败", e);
+            return "[]";
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<com.knowflow.dto.RagSourceChunk> deserializeSources(String sourcesJson) {
+        if (sourcesJson == null || sourcesJson.isEmpty()) {
+            return Collections.emptyList();
+        }
+        try {
+            return objectMapper.readValue(sourcesJson,
+                    objectMapper.getTypeFactory().constructCollectionType(List.class,
+                            com.knowflow.dto.RagSourceChunk.class));
+        } catch (JsonProcessingException e) {
+            log.warn("sources 反序列化失败", e);
+            return Collections.emptyList();
+        }
     }
 
     private void checkKbOwnership(Long userId, Long kbId) {
