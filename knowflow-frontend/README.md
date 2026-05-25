@@ -94,7 +94,7 @@ VITE_API_BASE_URL=http://localhost:8081
 | `/kb` | 知识库列表 | 增删改查知识库 |
 | `/kb/:id` | 知识库详情 | 文档列表、上传文档、进入问答 |
 | `/documents` | 文档管理 | 跨知识库文档管理、解析状态追踪 |
-| `/chat` | 智能问答 | 三栏布局（会话列表 / 对话 / 来源引用） |
+| `/chat` | 智能问答 | 三栏布局（会话列表 / 对话 / 来源引用），支持 SSE 逐字输出 |
 | `/settings` | 系统设置 | 用户信息、功能规划 |
 
 ---
@@ -109,6 +109,7 @@ VITE_API_BASE_URL=http://localhost:8081
 | `POST /api/document/upload` | 上传文档（multipart/form-data） |
 | `GET /api/document/{id}/status` | 文档解析状态轮询 |
 | `POST /api/chat/ask` | 智能问答 |
+| `POST /api/chat/ask/stream` | SSE 流式智能问答 |
 
 完整接口文档见 [../knowflow-backend/API.md](../knowflow-backend/API.md)。
 
@@ -118,7 +119,6 @@ VITE_API_BASE_URL=http://localhost:8081
 
 | 功能 | 说明 |
 |------|------|
-| SSE 流式输出 | `/api/chat/ask` 改为 SSE，前端逐字追加回答内容 |
-| 引用来源展示 | 将后端返回的 `DocumentChunk` 在右侧 SourcePanel 实时展示 |
+| 引用来源展示 | 将后端返回的 `DocumentChunk` 在右侧 SourcePanel 展示 |
 | 解析状态实时推送 | 通过轮询或 WebSocket 推送 `PARSING → EMBEDDING → DONE` 状态变化 |
 | 全文检索 | 跨知识库关键词搜索 |

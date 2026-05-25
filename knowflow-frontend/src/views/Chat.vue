@@ -86,11 +86,11 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, nextTick, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import { ElMessage } from 'element-plus/es/components/message/index.mjs'
 import ChatMessage from '@/components/ChatMessage.vue'
 import SourcePanel from '@/components/SourcePanel.vue'
 import { getKbList } from '@/api/kb'
-import { createSession, listSessions, askQuestion, getChatHistory } from '@/api/chat'
+import { createSession, listSessions, askQuestionStream, getChatHistory } from '@/api/chat'
 import type { KbVO } from '@/types/kb'
 import type { ChatSessionVO, ChatMessageVO, RagSourceChunk } from '@/types/chat'
 
@@ -162,17 +162,43 @@ async function sendMessage() {
 
   answering.value = true
   sources.value = []
+  const assistantMsg: ChatMessageVO = {
+    id: -Date.now(),
+    role: 'assistant',
+    content: '',
+    sources: [],
+    createdAt: new Date().toISOString(),
+  }
+  messages.value.push(assistantMsg)
+  scrollToBottom()
+
   try {
-    const reply = await askQuestion({
-      kbId: selectedKbId.value,
-      sessionId: currentSession.value.id,
-      question,
-    })
-    messages.value.push(reply)
-    // 使用后端返回的真实引用来源
-    sources.value = reply.sources ?? []
+    const reply = await askQuestionStream(
+      {
+        kbId: selectedKbId.value,
+        sessionId: currentSession.value.id,
+        question,
+      },
+      {
+        onToken: (token) => {
+          assistantMsg.content += token
+          scrollToBottom()
+        },
+        onSources: (items) => {
+          sources.value = items ?? []
+          assistantMsg.sources = sources.value
+        },
+        onDone: (message) => {
+          const idx = messages.value.findIndex(m => m.id === assistantMsg.id)
+          if (idx >= 0) messages.value[idx] = message
+          sources.value = message.sources ?? sources.value
+        },
+      }
+    )
+    if (!assistantMsg.content) assistantMsg.content = reply.content
     scrollToBottom()
   } catch (e: any) {
+    messages.value = messages.value.filter(m => m.id !== assistantMsg.id)
     ElMessage.error(e.message || '问答失败')
   } finally {
     answering.value = false

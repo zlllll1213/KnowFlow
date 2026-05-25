@@ -5,6 +5,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/knowflow/rag-go/internal/config"
+	"github.com/knowflow/rag-go/internal/embedding"
 	"github.com/knowflow/rag-go/internal/handler"
 	"github.com/knowflow/rag-go/internal/llm"
 	"github.com/knowflow/rag-go/internal/retriever"
@@ -13,6 +14,9 @@ import (
 
 func main() {
 	cfg := config.Load()
+	if err := cfg.Validate(); err != nil {
+		log.Fatalf("配置错误: %v", err)
+	}
 
 	// 初始化检索器
 	ret, err := retriever.New(cfg)
@@ -23,12 +27,13 @@ func main() {
 
 	// 初始化 LLM Provider
 	llmProvider := llm.NewProvider(cfg)
+	embeddingProvider := embedding.NewProvider(cfg)
 
 	// 初始化 RAG Service
-	ragService := service.New(ret, llmProvider, cfg.DefaultTopK)
+	ragService := service.New(ret, embeddingProvider, llmProvider, cfg.DefaultTopK, cfg.MaxTopK)
 
 	// 初始化 Handler
-	h := handler.New(ragService)
+	h := handler.New(ragService, cfg)
 
 	// 路由
 	r := gin.Default()

@@ -13,9 +13,13 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
 
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 /**
  * Go RAG Service HTTP 客户端。
@@ -57,6 +61,9 @@ public class RagClient {
                     baseUrl + "/rag/ask", request, RagResponse.class);
 
             if (response != null) {
+                if (response.getSources() == null) {
+                    response.setSources(Collections.emptyList());
+                }
                 log.info("RAG 问答完成: kbId={}, sources={}, latencyMs={}",
                         kbId, response.getSources().size(), response.getLatencyMs());
                 return response;
@@ -66,6 +73,45 @@ public class RagClient {
         }
 
         return mockResponse(kbId, question);
+    }
+
+    public void askStream(Long kbId, String question, int topK, StreamListener listener) {
+        try {
+            Map<String, Object> body = Map.of(
+                    "kbId", kbId,
+                    "question", question,
+                    "topK", topK
+            );
+
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON);
+            HttpEntity<Map<String, Object>> request = new HttpEntity<>(body, headers);
+
+            restTemplate.execute(baseUrl + "/rag/ask/stream", org.springframework.http.HttpMethod.POST,
+                    clientHttpRequest -> {
+                        clientHttpRequest.getHeaders().putAll(request.getHeaders());
+                        objectMapper.writeValue(clientHttpRequest.getBody(), body);
+                    },
+                    clientHttpResponse -> {
+                        try (BufferedReader reader = new BufferedReader(new InputStreamReader(
+                                clientHttpResponse.getBody(), StandardCharsets.UTF_8))) {
+                            String line;
+                            while ((line = reader.readLine()) != null) {
+                                if (!line.startsWith("data:")) {
+                                    continue;
+                                }
+                                handleStreamEvent(line.substring(5).trim(), listener);
+                            }
+                        }
+                        return null;
+                    });
+        } catch (Exception e) {
+            log.warn("Go RAG Service 流式接口不可用 ({}), 降级为 mock", e.getMessage());
+            RagResponse fallback = mockResponse(kbId, question);
+            listener.onToken(fallback.getAnswer());
+            listener.onSources(fallback.getSources());
+            listener.onDone();
+        }
     }
 
     /**
@@ -78,6 +124,40 @@ public class RagClient {
         } catch (Exception e) {
             return false;
         }
+    }
+
+    @SuppressWarnings("unchecked")
+    private void handleStreamEvent(String json, StreamListener listener) throws JsonProcessingException {
+        if (json == null || json.isBlank()) {
+            return;
+        }
+        Map<String, Object> event = objectMapper.readValue(json, Map.class);
+        String type = Objects.toString(event.get("type"), "");
+        switch (type) {
+            case "token" -> listener.onToken(Objects.toString(event.get("content"), ""));
+            case "sources" -> {
+                Object rawSources = event.get("sources");
+                List<RagSourceChunk> sources = rawSources == null
+                        ? Collections.emptyList()
+                        : objectMapper.convertValue(rawSources,
+                                objectMapper.getTypeFactory().constructCollectionType(List.class, RagSourceChunk.class));
+                listener.onSources(sources);
+            }
+            case "error" -> listener.onError(Objects.toString(event.get("message"), "RAG 流式问答失败"));
+            case "done" -> listener.onDone();
+            default -> {
+            }
+        }
+    }
+
+    public interface StreamListener {
+        void onToken(String token);
+
+        void onSources(List<RagSourceChunk> sources);
+
+        void onError(String message);
+
+        void onDone();
     }
 
     // ---------- mock 降级 ----------

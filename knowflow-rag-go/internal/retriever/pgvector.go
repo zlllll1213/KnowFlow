@@ -1,13 +1,18 @@
 package retriever
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"log"
+	"regexp"
+	"strings"
+	"time"
+	"unicode/utf8"
 
-	_ "github.com/lib/pq"
 	"github.com/knowflow/rag-go/internal/config"
 	"github.com/knowflow/rag-go/internal/types"
+	"github.com/lib/pq"
 )
 
 type PgRetriever struct {
@@ -22,77 +27,169 @@ func New(cfg *config.Config) (*PgRetriever, error) {
 	if err := db.Ping(); err != nil {
 		return nil, fmt.Errorf("数据库 ping 失败: %w", err)
 	}
+	db.SetMaxOpenConns(10)
+	db.SetMaxIdleConns(5)
+	db.SetConnMaxLifetime(30 * time.Minute)
 	log.Println("PostgreSQL 连接成功")
 	return &PgRetriever{db: db}, nil
 }
 
 // Retrieve 从 document_chunk 检索与 query 相关的 TopK 个片段。
-// 第一版使用 keyword LIKE 检索；后续接入 pgvector：ORDER BY embedding <=> $1。
-func (r *PgRetriever) Retrieve(kbId int64, query string, topK int) ([]types.SourceChunk, error) {
+// 当 queryEmbedding 可用时使用 pgvector 相似度检索，否则退回关键词检索。
+func (r *PgRetriever) Retrieve(ctx context.Context, kbId int64, query string, queryEmbedding []float32, topK int) ([]types.SourceChunk, error) {
 	if topK <= 0 {
 		topK = 5
 	}
+	if len(queryEmbedding) > 0 {
+		sources, err := r.retrieveByVector(ctx, kbId, queryEmbedding, topK)
+		if err == nil {
+			log.Printf("向量检索完成: kbId=%d, topK=%d, found=%d", kbId, topK, len(sources))
+			return sources, nil
+		}
+		log.Printf("向量检索失败，回退关键词检索: %v", err)
+	}
 
-	// 第一版：简单关键词匹配（ILIKE）
-	// 后续替换为 pgvector 向量检索:
-	//   SELECT dc.id, dc.document_id, dc.chunk_index, dc.content,
-	//          d.file_name, 1 - (dc.embedding <=> $1) AS score
-	//   FROM document_chunk dc
-	//   JOIN document d ON d.id = dc.document_id
-	//   WHERE dc.kb_id = $2 AND d.is_deleted = 0
-	//   ORDER BY dc.embedding <=> $1 LIMIT $3
-
-	rows, err := r.db.Query(`
-		SELECT dc.id, dc.document_id, dc.chunk_index, dc.content, d.file_name
+	terms := keywordTerms(query)
+	rows, err := r.db.QueryContext(ctx, `
+		WITH terms AS (
+			SELECT unnest($2::text[]) AS term
+		)
+		SELECT dc.id,
+		       dc.document_id,
+		       dc.chunk_index,
+		       dc.content,
+		       d.file_name,
+		       COUNT(t.term) AS matched_terms
 		FROM document_chunk dc
 		JOIN document d ON d.id = dc.document_id
-		WHERE dc.kb_id = $1 AND d.is_deleted = 0
-		  AND dc.content ILIKE '%' || $2 || '%'
-		ORDER BY dc.chunk_index
+		JOIN terms t ON dc.content ILIKE '%' || t.term || '%'
+		WHERE dc.kb_id = $1
+		  AND d.is_deleted = 0
+		GROUP BY dc.id, dc.document_id, dc.chunk_index, dc.content, d.file_name
+		ORDER BY matched_terms DESC, dc.chunk_index
 		LIMIT $3
-	`, kbId, query, topK)
+	`, kbId, pq.Array(terms), topK)
 
 	if err != nil {
 		return nil, fmt.Errorf("检索失败: %w", err)
 	}
 	defer rows.Close()
 
-	var sources []types.SourceChunk
+	sources := make([]types.SourceChunk, 0)
 	for rows.Next() {
 		var s types.SourceChunk
-		if err := rows.Scan(&s.ChunkId, &s.DocumentId, &s.ChunkIndex, &s.Content, &s.FileName); err != nil {
+		var matchedTerms int
+		if err := rows.Scan(&s.ChunkId, &s.DocumentId, &s.ChunkIndex, &s.Content, &s.FileName, &matchedTerms); err != nil {
 			return nil, fmt.Errorf("扫描行失败: %w", err)
 		}
-		s.Score = 0.5 // keyword match 无精确分数，统一 0.5
+		s.Score = 0.4 + 0.1*float64(matchedTerms)
+		if s.Score > 0.9 {
+			s.Score = 0.9
+		}
 		sources = append(sources, s)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("读取检索结果失败: %w", err)
+	}
 
-	// 关键词未命中时，返回知识库中前 topK 个 chunk 作为 fallback
-	if len(sources) == 0 {
-		rows2, err := r.db.Query(`
-			SELECT dc.id, dc.document_id, dc.chunk_index, dc.content, d.file_name
-			FROM document_chunk dc
-			JOIN document d ON d.id = dc.document_id
-			WHERE dc.kb_id = $1 AND d.is_deleted = 0
-			ORDER BY dc.chunk_index
-			LIMIT $2
-		`, kbId, topK)
-		if err != nil {
-			return nil, fmt.Errorf("fallback 检索失败: %w", err)
+	log.Printf("关键词检索完成: kbId=%d, topK=%d, terms=%v, found=%d", kbId, topK, terms, len(sources))
+	return sources, nil
+}
+
+func (r *PgRetriever) retrieveByVector(ctx context.Context, kbId int64, queryEmbedding []float32, topK int) ([]types.SourceChunk, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT dc.id,
+		       dc.document_id,
+		       dc.chunk_index,
+		       dc.content,
+		       d.file_name,
+		       1 - (dc.embedding <=> $2::vector) AS score
+		FROM document_chunk dc
+		JOIN document d ON d.id = dc.document_id
+		WHERE dc.kb_id = $1
+		  AND d.is_deleted = 0
+		  AND dc.embedding IS NOT NULL
+		ORDER BY dc.embedding <=> $2::vector
+		LIMIT $3
+	`, kbId, vectorLiteral(queryEmbedding), topK)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	sources := make([]types.SourceChunk, 0)
+	for rows.Next() {
+		var s types.SourceChunk
+		if err := rows.Scan(&s.ChunkId, &s.DocumentId, &s.ChunkIndex, &s.Content, &s.FileName, &s.Score); err != nil {
+			return nil, err
 		}
-		defer rows2.Close()
-		for rows2.Next() {
-			var s types.SourceChunk
-			if err := rows2.Scan(&s.ChunkId, &s.DocumentId, &s.ChunkIndex, &s.Content, &s.FileName); err != nil {
-				return nil, err
+		sources = append(sources, s)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return sources, nil
+}
+
+func vectorLiteral(values []float32) string {
+	var b strings.Builder
+	b.WriteByte('[')
+	for i, v := range values {
+		if i > 0 {
+			b.WriteByte(',')
+		}
+		b.WriteString(fmt.Sprintf("%g", v))
+	}
+	b.WriteByte(']')
+	return b.String()
+}
+
+var keywordPattern = regexp.MustCompile(`[A-Za-z0-9][A-Za-z0-9_-]*|[\p{Han}]+`)
+
+func keywordTerms(query string) []string {
+	seen := make(map[string]struct{})
+	terms := make([]string, 0)
+
+	add := func(term string) {
+		term = strings.TrimSpace(term)
+		if term == "" || utf8.RuneCountInString(term) < 2 {
+			return
+		}
+		if utf8.RuneCountInString(term) > 64 {
+			runes := []rune(term)
+			term = string(runes[:64])
+		}
+		key := strings.ToLower(term)
+		if _, ok := seen[key]; ok {
+			return
+		}
+		seen[key] = struct{}{}
+		terms = append(terms, term)
+	}
+
+	for _, match := range keywordPattern.FindAllString(query, -1) {
+		add(match)
+		if isHanRun(match) {
+			runes := []rune(match)
+			for i := 0; i+1 < len(runes); i++ {
+				add(string(runes[i : i+2]))
 			}
-			s.Score = 0.3
-			sources = append(sources, s)
 		}
 	}
 
-	log.Printf("检索完成: kbId=%d, topK=%d, found=%d", kbId, topK, len(sources))
-	return sources, nil
+	if len(terms) == 0 {
+		add(query)
+	}
+	return terms
+}
+
+func isHanRun(s string) bool {
+	for _, r := range s {
+		if r < '\u4e00' || r > '\u9fff' {
+			return false
+		}
+	}
+	return s != ""
 }
 
 func (r *PgRetriever) Close() {

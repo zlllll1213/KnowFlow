@@ -290,12 +290,31 @@ POST /api/chat/ask
 |------|------|------|
 | id | long | 消息 ID |
 | role | string | "assistant" |
-| content | string | 回答内容（当前为模拟） |
+| content | string | 回答内容 |
 | createdAt | string | 创建时间 |
 
 ---
 
-### 4.4 聊天历史
+### 4.4 流式提问
+
+```
+POST /api/chat/ask/stream
+```
+
+**Request Body:** 同 4.3。
+
+**Response:** `text/event-stream`
+
+| 事件 | data | 说明 |
+|------|------|------|
+| token | `{ "content": "..." }` | 增量回答文本 |
+| sources | `[...]` | 引用来源列表 |
+| done | `ChatMessageVO` | 完整 assistant 消息，已持久化 |
+| error | `{ "message": "..." }` | 流式生成失败 |
+
+---
+
+### 4.5 聊天历史
 
 ```
 GET /api/chat/history?sessionId={sessionId}
@@ -315,6 +334,27 @@ GET /api/chat/history?sessionId={sessionId}
 | role | string | "user" 或 "assistant" |
 | content | string | 消息内容 |
 | createdAt | string | 创建时间 |
+
+## 5. 系统健康检查
+
+### 5.1 后端依赖健康检查
+
+```
+GET /api/health
+```
+
+**无需认证。**
+
+**Response `data`:**
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| status | string | 后端接口状态 |
+| database | object | PostgreSQL 连通性 |
+| redis | object | Redis 连通性 |
+| rag | object | Go RAG Service 连通性 |
+| storage | object | 当前存储类型与本地路径 |
+| ragBaseUrl | string | 后端配置的 Go RAG 地址 |
 
 ---
 

@@ -1,17 +1,17 @@
 # KnowFlow Go RAG Service
 
-基于 Go 的 RAG（检索增强生成）引擎。负责向量检索、Prompt 构建和 LLM 调用。
-
-> ⚠️ 当前为第一版：使用数据库 keyword LIKE 检索 + Mock LLM。真实向量检索和 LLM 调用待后续实现。
+基于 Go 的 RAG（检索增强生成）引擎。负责 query embedding、知识库检索、Prompt 构建、LLM 调用和 SSE 流式输出。
 
 ## 架构
 
 ```
-Spring Boot → POST /rag/ask → Go RAG Service → PostgreSQL (document_chunk)
-                                   ↓
-                              Prompt Builder
-                                   ↓
-                              LLM Provider (mock / deepseek / openai / ollama)
+Spring Boot → POST /rag/ask 或 /rag/ask/stream → Go RAG Service
+                                                  ↓
+                                      Embedding Provider (mock / openai / deepseek / ollama)
+                                                  ↓
+                                      PostgreSQL document_chunk (pgvector / keyword)
+                                                  ↓
+                                      LLM Provider (mock / deepseek / openai / ollama)
 ```
 
 ## 接口
@@ -19,7 +19,17 @@ Spring Boot → POST /rag/ask → Go RAG Service → PostgreSQL (document_chunk)
 ### `GET /health`
 
 ```json
-{ "status": "ok", "version": "0.1.0" }
+{
+  "status": "ok",
+  "version": "0.1.0",
+  "config": {
+    "llmProvider": "mock",
+    "embeddingProvider": "mock",
+    "embeddingDim": 1536,
+    "defaultTopK": 5,
+    "maxTopK": 20
+  }
+}
 ```
 
 ### `POST /rag/ask`（同步）
@@ -68,10 +78,18 @@ data: {"type":"done"}
 |------|------|--------|
 | `RAG_PORT` | 服务端口 | 8090 |
 | `RAG_DB_DSN` | PostgreSQL 连接串 | postgres://knowflow:knowflow123@localhost:5432/knowflow |
+| `RAG_REQUEST_TIMEOUT_SECONDS` | 外部模型请求超时时间 | 60 |
+| `RAG_DEFAULT_TOP_K` | 默认检索条数 | 5 |
+| `RAG_MAX_TOP_K` | 最大检索条数上限 | 20 |
 | `RAG_LLM_PROVIDER` | LLM 提供商 (mock/deepseek/openai/ollama) | mock |
 | `RAG_LLM_API_KEY` | LLM API Key | — |
 | `RAG_LLM_BASE_URL` | LLM API 地址 | — |
 | `RAG_LLM_MODEL` | 模型名称 | — |
+| `RAG_EMBEDDING_PROVIDER` | Embedding 提供商 (mock/openai/deepseek/ollama) | mock |
+| `RAG_EMBEDDING_API_KEY` | Embedding API Key | — |
+| `RAG_EMBEDDING_BASE_URL` | Embedding API 地址 | — |
+| `RAG_EMBEDDING_MODEL` | Embedding 模型名称 | text-embedding-3-small |
+| `RAG_EMBEDDING_DIM` | Embedding 维度 | 1536 |
 
 ## 本地启动
 
@@ -113,17 +131,16 @@ curl -X POST http://localhost:8090/rag/ask/stream \
 
 | 功能 | 状态 | 说明 |
 |------|:----:|------|
-| keyword 检索 | ✅ | ILIKE 关键词匹配 + fallback |
-| pgvector 向量检索 | TODO | 需 pgvector 扩展 + embedding 数据 |
+| keyword 检索 | ✅ | mock embedding 或向量生成失败时自动使用 ILIKE |
+| pgvector 向量检索 | ✅ | query embedding 存在时使用 `embedding <=> query` 排序 |
+| Query embedding | ✅ | 支持 OpenAI 兼容接口和 Ollama |
 | Mock LLM | ✅ | 返回固定模板 |
-| DeepSeek / OpenAI | TODO | 需配置 API key |
+| DeepSeek / OpenAI / Ollama LLM | ✅ | 支持同步与流式调用 |
 | SSE 流式输出 | ✅ | text/event-stream |
 | Prompt 构建 | ✅ | system + user messages |
 
 ## 后续规划
 
-- [ ] pgvector 向量检索 `ORDER BY embedding <=> $1`
-- [ ] DeepSeek / OpenAI / Ollama Provider 实现
-- [ ] embedding 生成（query embedding）
 - [ ] 检索缓存
 - [ ] 并发控制
+- [ ] 更细粒度的 provider 重试和熔断

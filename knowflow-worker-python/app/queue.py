@@ -4,6 +4,7 @@ Redis 队列消费者。
 """
 
 import logging
+import json
 import redis
 from app.config import config
 
@@ -17,6 +18,20 @@ def create_redis_client() -> redis.Redis:
     return redis.Redis.from_url(config.redis_url, decode_responses=True)
 
 
+def push_task(client: redis.Redis, task_id: int):
+    """投递解析任务。"""
+    client.rpush(PARSE_QUEUE_KEY, str(task_id))
+
+
+def parse_task_id(raw_value: str) -> int:
+    """兼容字符串数字、JSON 数字、JSON 字符串等历史入队格式。"""
+    try:
+        return int(raw_value)
+    except (TypeError, ValueError):
+        parsed = json.loads(raw_value)
+        return int(parsed)
+
+
 def block_pop_task(client: redis.Redis, timeout: int = 5) -> int | None:
     """
     阻塞等待队列中的任务。
@@ -27,4 +42,4 @@ def block_pop_task(client: redis.Redis, timeout: int = 5) -> int | None:
         return None
     _, task_id_str = result
     log.info("从队列获取任务: taskId=%s", task_id_str)
-    return int(task_id_str)
+    return parse_task_id(task_id_str)

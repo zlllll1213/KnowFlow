@@ -6,6 +6,7 @@ import (
 	"log"
 	"time"
 
+	"github.com/knowflow/rag-go/internal/embedding"
 	"github.com/knowflow/rag-go/internal/llm"
 	"github.com/knowflow/rag-go/internal/prompt"
 	"github.com/knowflow/rag-go/internal/retriever"
@@ -14,25 +15,28 @@ import (
 
 type RAGService struct {
 	retriever *retriever.PgRetriever
+	embedder  embedding.Provider
 	llm       llm.Provider
 	topK      int
+	maxTopK   int
 }
 
-func New(retriever *retriever.PgRetriever, llmProvider llm.Provider, topK int) *RAGService {
-	return &RAGService{retriever: retriever, llm: llmProvider, topK: topK}
+func New(retriever *retriever.PgRetriever, embedder embedding.Provider, llmProvider llm.Provider, topK int, maxTopK int) *RAGService {
+	return &RAGService{retriever: retriever, embedder: embedder, llm: llmProvider, topK: topK, maxTopK: maxTopK}
 }
 
 // Ask 同步问答。
 func (s *RAGService) Ask(ctx context.Context, req types.RagRequest) (*types.RagResponse, error) {
 	start := time.Now()
 
-	topK := req.TopK
-	if topK <= 0 {
-		topK = s.topK
+	topK := s.normalizeTopK(req.TopK)
+
+	queryEmbedding, err := s.embedder.Embed(ctx, req.Question)
+	if err != nil {
+		log.Printf("query embedding 生成失败，回退关键词检索: %v", err)
 	}
 
-	// 1. 检索
-	sources, err := s.retriever.Retrieve(req.KbId, req.Question, topK)
+	sources, err := s.retriever.Retrieve(ctx, req.KbId, req.Question, queryEmbedding, topK)
 	if err != nil {
 		return nil, fmt.Errorf("检索失败: %w", err)
 	}
@@ -67,13 +71,15 @@ func (s *RAGService) AskStream(ctx context.Context, req types.RagRequest) (<-cha
 		defer close(tokenCh)
 		defer close(errCh)
 
-		topK := req.TopK
-		if topK <= 0 {
-			topK = s.topK
+		topK := s.normalizeTopK(req.TopK)
+
+		queryEmbedding, err := s.embedder.Embed(ctx, req.Question)
+		if err != nil {
+			log.Printf("query embedding 生成失败，回退关键词检索: %v", err)
 		}
 
 		// 1. 检索
-		sources, err := s.retriever.Retrieve(req.KbId, req.Question, topK)
+		sources, err := s.retriever.Retrieve(ctx, req.KbId, req.Question, queryEmbedding, topK)
 		if err != nil {
 			errCh <- fmt.Errorf("检索失败: %w", err)
 			return
@@ -93,4 +99,17 @@ func (s *RAGService) AskStream(ctx context.Context, req types.RagRequest) (<-cha
 	}()
 
 	return tokenCh, sourceCh, errCh
+}
+
+func (s *RAGService) normalizeTopK(topK int) int {
+	if topK <= 0 {
+		topK = s.topK
+	}
+	if topK <= 0 {
+		topK = 5
+	}
+	if s.maxTopK > 0 && topK > s.maxTopK {
+		return s.maxTopK
+	}
+	return topK
 }

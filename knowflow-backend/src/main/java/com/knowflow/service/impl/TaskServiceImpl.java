@@ -5,7 +5,7 @@ import com.knowflow.mapper.ParseTaskMapper;
 import com.knowflow.service.TaskService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
 @Slf4j
@@ -14,7 +14,7 @@ import org.springframework.stereotype.Service;
 public class TaskServiceImpl implements TaskService {
 
     private final ParseTaskMapper parseTaskMapper;
-    private final RedisTemplate<String, Object> redisTemplate;
+    private final StringRedisTemplate redisTemplate;
 
     /** Redis 队列 Key */
     private static final String PARSE_QUEUE_KEY = "knowflow:parse:queue";

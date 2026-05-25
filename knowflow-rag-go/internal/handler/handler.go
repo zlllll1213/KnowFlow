@@ -7,16 +7,18 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"github.com/knowflow/rag-go/internal/config"
 	"github.com/knowflow/rag-go/internal/service"
 	"github.com/knowflow/rag-go/internal/types"
 )
 
 type Handler struct {
 	rag *service.RAGService
+	cfg *config.Config
 }
 
-func New(rag *service.RAGService) *Handler {
-	return &Handler{rag: rag}
+func New(rag *service.RAGService, cfg *config.Config) *Handler {
+	return &Handler{rag: rag, cfg: cfg}
 }
 
 // Health GET /health
@@ -24,6 +26,7 @@ func (h *Handler) Health(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"status":  "ok",
 		"version": "0.1.0",
+		"config":  h.cfg.PublicSummary(),
 	})
 }
 
@@ -87,8 +90,13 @@ func (h *Handler) AskStream(c *gin.Context) {
 				flusher.Flush()
 			}
 
-		case err := <-errCh:
-			fmt.Fprintf(c.Writer, "data: {\"type\":\"error\",\"message\":\"%s\"}\n\n", err.Error())
+		case err, ok := <-errCh:
+			if !ok {
+				errCh = nil
+				continue
+			}
+			data, _ := json.Marshal(gin.H{"type": "error", "message": err.Error()})
+			fmt.Fprintf(c.Writer, "data: %s\n\n", data)
 			if flusher != nil {
 				flusher.Flush()
 			}

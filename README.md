@@ -56,6 +56,10 @@ KnowFlow/
 │   ├── cmd/rag-server/
 │   ├── internal/               # handler · service · retriever · llm · prompt
 │   └── go.mod
+├── scripts/
+│   ├── dev-infra-up.sh         # 启动 Docker 基础设施并执行本地迁移
+│   ├── dev-migrate-db.sh       # 对旧本地数据库补齐兼容字段/索引
+│   └── smoke-e2e.sh            # 上传 → 解析 → 检索 → SSE 问答链路检查
 ├── .env.example                # 全局环境变量模板
 ├── docs/
 │   └── OPTIMIZATION_PLAN.md    # 完整优化规划文档
@@ -91,6 +95,21 @@ docker compose up -d
 ```
 
 启动 PostgreSQL 16 + pgvector（5432）、Redis 7（6379）、MinIO（9000/9001），并自动建表。
+
+如果本机已有旧数据卷，建议运行兼容迁移：
+
+```bash
+cd ..
+./scripts/dev-migrate-db.sh
+```
+
+也可以直接使用：
+
+```bash
+./scripts/dev-infra-up.sh
+```
+
+它会启动 Docker 基础设施并自动执行本地兼容迁移。
 
 ### 2. 启动后端
 
@@ -147,7 +166,9 @@ go mod tidy && go run cmd/rag-server/main.go
 | POST | `/api/chat/session` | 创建会话 | ✓ |
 | GET | `/api/chat/session/list?kbId=` | 会话列表 | ✓ |
 | POST | `/api/chat/ask` | 智能问答（返回 answer + sources） | ✓ |
+| POST | `/api/chat/ask/stream` | SSE 流式智能问答 | ✓ |
 | GET | `/api/chat/history?sessionId=` | 聊天历史 | ✓ |
+| GET | `/api/health` | 后端依赖健康检查 | |
 
 完整接口文档见 [knowflow-backend/API.md](knowflow-backend/API.md)。
 
@@ -180,18 +201,43 @@ FAILED
 
 ---
 
+## 健康检查与 Smoke Test
+
+```bash
+# 后端依赖检查：database / redis / rag / storage
+curl http://localhost:8081/api/health
+
+# Go RAG 配置与服务检查
+curl http://localhost:8090/health
+
+# Python Worker 配置检查
+cd knowflow-worker-python
+python -m app.main --check
+```
+
+服务全部启动后，可以跑一条真实链路：
+
+```bash
+./scripts/smoke-e2e.sh
+```
+
+脚本会自动注册临时用户、创建知识库、上传测试文档、等待 Worker 解析完成，然后调用 `/api/chat/ask/stream` 验证 SSE token/done 事件。
+
+---
+
 ## 后续规划
 
 | 功能 | 状态 |
 |------|:----:|
 | Python Worker 文档解析 + 切片 | ✅ 已实现 |
 | Go RAG Service 检索 + 生成 | ✅ 已实现 |
-| pgvector 向量检索 | TODO（keyword fallback） |
-| Mock LLM → DeepSeek / OpenAI / Ollama | TODO |
-| SSE 流式输出 | ✅ Go 端已实现 |
+| pgvector 向量检索 | ✅ 已实现（支持 keyword fallback） |
+| DeepSeek / OpenAI / Ollama Provider | ✅ 已实现 |
+| SSE 流式输出 | ✅ 前后端贯通 |
 | 引用来源展示 | ✅ 前后端贯通 |
 | 文档解析进度实时刷新 | TODO |
 | MinIO 存储切换 | ✅ 已实现（配置切换） |
+| 端到端 smoke test | ✅ 已实现 |
 
 ---
 

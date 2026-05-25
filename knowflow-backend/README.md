@@ -61,9 +61,10 @@ knowflow-backend/
     │   └── impl/                             # 业务实现
     ├── controller/                           # 控制器
     └── util/                                 # 工具类
-        ├── RagClient.java                    # RAG 服务客户端（当前为 mock）
-        ├── MinioStorageService.java          # MinIO 存储接口
-        └── LocalStorageService.java          # 本地存储实现
+        ├── RagClient.java                    # Go RAG 服务客户端（同步 + SSE）
+        ├── FileStorageService.java           # 文件存储接口
+        ├── LocalStorageService.java          # 本地存储实现
+        └── MinioStorageServiceImpl.java      # MinIO 存储实现
 ```
 
 ---
@@ -93,6 +94,15 @@ docker compose up -d
 
 MinIO 默认凭据：`minioadmin / minioadmin123`
 
+文件存储由 `storage.type` 控制：开发环境默认 `local`，生产环境默认 `minio`。数据库 `document.file_path` 保存的是统一 object key，例如 `1/2/abcd1234_demo.pdf`；本地模式会把它映射到 `storage.local-path` 下，MinIO 模式会把它作为 object name。删除文档或知识库时会同步清理原始文件、解析任务和文档切片。
+
+如果本地 Docker 数据卷来自旧版本，可执行兼容迁移：
+
+```bash
+cd ..
+./scripts/dev-migrate-db.sh
+```
+
 ### 第二步：（可选）手动初始化数据库
 
 容器首次启动时会自动执行建表脚本。如需手动执行：
@@ -113,6 +123,12 @@ java -jar target/knowflow-backend-1.0.0-SNAPSHOT.jar
 ```
 
 服务启动后访问：`http://localhost:8081`
+
+健康检查：
+
+```bash
+curl http://localhost:8081/api/health
+```
 
 ---
 
@@ -152,6 +168,12 @@ curl -X POST http://localhost:8081/api/chat/ask \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer YOUR_TOKEN" \
   -d '{"kbId":1,"sessionId":1,"question":"什么是 KnowFlow？"}'
+
+# 流式智能提问（SSE）
+curl -N -X POST http://localhost:8081/api/chat/ask/stream \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -d '{"kbId":1,"sessionId":1,"question":"什么是 KnowFlow？"}'
 ```
 
 ---
@@ -162,6 +184,7 @@ curl -X POST http://localhost:8081/api/chat/ask \
 |------|------|------|:--------:|
 | POST | `/api/auth/register` | 用户注册 | |
 | POST | `/api/auth/login` | 登录，返回 JWT | |
+| GET | `/api/health` | 依赖健康检查 | |
 | GET | `/api/auth/me` | 获取当前用户信息 | ✓ |
 | POST | `/api/kb` | 创建知识库 | ✓ |
 | GET | `/api/kb/list` | 知识库列表 | ✓ |
@@ -176,6 +199,7 @@ curl -X POST http://localhost:8081/api/chat/ask \
 | POST | `/api/chat/session` | 创建聊天会话 | ✓ |
 | GET | `/api/chat/session/list?kbId=` | 会话列表 | ✓ |
 | POST | `/api/chat/ask` | 智能提问 | ✓ |
+| POST | `/api/chat/ask/stream` | SSE 流式智能提问 | ✓ |
 | GET | `/api/chat/history?sessionId=` | 聊天历史 | ✓ |
 
 完整请求 / 响应字段说明见 [API.md](./API.md)。
@@ -205,7 +229,7 @@ curl -X POST http://localhost:8081/api/chat/ask \
 | 功能 | 说明 |
 |------|------|
 | Python Worker | 消费 Redis 队列 `knowflow:parse:queue`，完成文档解析与向量化 |
-| Go RAG 服务 | 替换 `RagClient.mockAsk()`，通过 HTTP 调用 Go 端 RAG 检索与生成 |
+| Go RAG 服务 | 后端通过 `RagClient` 调用 Go 端 RAG 检索与生成 |
 | pgvector 检索 | 启用 PostgreSQL pgvector 扩展，将 `document_chunk.embedding` 改为 `VECTOR` 类型 |
 | SSE 流式输出 | 聊天接口支持 Server-Sent Events 逐字流式返回 |
 | MinIO 集成 | 将本地文件存储切换至 MinIO 对象存储 |

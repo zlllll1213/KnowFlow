@@ -11,6 +11,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.util.List;
 
@@ -43,6 +44,13 @@ public class ChatController {
                                      @Valid @RequestBody ChatAskRequest request) {
         ChatMessageVO answer = chatService.ask(loginUser.getUserId(), request);
         return Result.success(answer);
+    }
+
+    /** 流式提问 */
+    @PostMapping("/ask/stream")
+    public SseEmitter askStream(@AuthenticationPrincipal LoginUser loginUser,
+                                @Valid @RequestBody ChatAskRequest request) {
+        return chatService.askStream(loginUser.getUserId(), request);
     }
 
     /** 聊天历史 */

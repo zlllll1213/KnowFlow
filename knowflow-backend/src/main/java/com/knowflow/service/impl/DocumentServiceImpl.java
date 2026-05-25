@@ -3,9 +3,13 @@ package com.knowflow.service.impl;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.knowflow.common.BusinessException;
 import com.knowflow.entity.Document;
+import com.knowflow.entity.DocumentChunk;
 import com.knowflow.entity.KnowledgeBase;
+import com.knowflow.entity.ParseTask;
+import com.knowflow.mapper.DocumentChunkMapper;
 import com.knowflow.mapper.DocumentMapper;
 import com.knowflow.mapper.KnowledgeBaseMapper;
+import com.knowflow.mapper.ParseTaskMapper;
 import com.knowflow.service.DocumentService;
 import com.knowflow.service.TaskService;
 import com.knowflow.util.FileStorageService;
@@ -13,6 +17,7 @@ import com.knowflow.vo.DocumentVO;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
@@ -25,39 +30,44 @@ import java.util.stream.Collectors;
 public class DocumentServiceImpl implements DocumentService {
 
     private final DocumentMapper documentMapper;
+    private final DocumentChunkMapper documentChunkMapper;
     private final KnowledgeBaseMapper kbMapper;
+    private final ParseTaskMapper parseTaskMapper;
     private final TaskService taskService;
     private final FileStorageService fileStorageService;
 
     @Override
+    @Transactional
     public DocumentVO upload(Long userId, Long kbId, MultipartFile file) {
         checkKbOwnership(userId, kbId);
 
         String originalName = file.getOriginalFilename();
         String objectKey = buildObjectKey(userId, kbId, originalName);
 
-        // 通过 FileStorageService 保存文件（本地或 MinIO）
         String storedPath = fileStorageService.upload(file, objectKey);
 
-        // 创建文档记录
-        Document doc = new Document();
-        doc.setKbId(kbId);
-        doc.setUserId(userId);
-        doc.setFileName(originalName);
-        doc.setFilePath(storedPath);
-        doc.setFileSize(file.getSize());
-        doc.setFileType(getExtension(originalName));
-        doc.setStatus("UPLOADED");
-        doc.setChunkCount(0);
-        documentMapper.insert(doc);
+        try {
+            Document doc = new Document();
+            doc.setKbId(kbId);
+            doc.setUserId(userId);
+            doc.setFileName(originalName);
+            doc.setFilePath(storedPath);
+            doc.setFileSize(file.getSize());
+            doc.setFileType(getExtension(originalName));
+            doc.setStatus("UPLOADED");
+            doc.setChunkCount(0);
+            documentMapper.insert(doc);
 
-        // 创建解析任务，推入 Redis 队列
-        taskService.createParseTask(doc.getId(), kbId);
+            taskService.createParseTask(doc.getId(), kbId);
 
-        log.info("文档上传完成: docId={}, kbId={}, file={}, size={}",
-                doc.getId(), kbId, originalName, file.getSize());
+            log.info("文档上传完成: docId={}, kbId={}, file={}, size={}",
+                    doc.getId(), kbId, originalName, file.getSize());
 
-        return toVO(doc);
+            return toVO(doc);
+        } catch (RuntimeException e) {
+            safeDeleteFile(storedPath);
+            throw e;
+        }
     }
 
     @Override
@@ -79,9 +89,16 @@ public class DocumentServiceImpl implements DocumentService {
     }
 
     @Override
+    @Transactional
     public void delete(Long userId, Long docId) {
         Document doc = getAndCheckOwner(userId, docId);
+
+        documentChunkMapper.delete(new LambdaQueryWrapper<DocumentChunk>()
+                .eq(DocumentChunk::getDocumentId, doc.getId()));
+        parseTaskMapper.delete(new LambdaQueryWrapper<ParseTask>()
+                .eq(ParseTask::getDocumentId, doc.getId()));
         documentMapper.deleteById(doc.getId());
+        safeDeleteFile(doc.getFilePath());
     }
 
     @Override
@@ -119,7 +136,7 @@ public class DocumentServiceImpl implements DocumentService {
      */
     private String buildObjectKey(Long userId, Long kbId, String originalName) {
         String uuid = UUID.randomUUID().toString().substring(0, 8);
-        String safeName = (originalName != null) ? originalName : "file";
+        String safeName = sanitizeFileName(originalName);
         return String.format("%d/%d/%s_%s", userId, kbId, uuid, safeName);
     }
 
@@ -128,6 +145,36 @@ public class DocumentServiceImpl implements DocumentService {
             return "";
         }
         return filename.substring(filename.lastIndexOf(".") + 1).toLowerCase();
+    }
+
+    private String sanitizeFileName(String filename) {
+        if (filename == null || filename.isBlank()) {
+            return "file";
+        }
+
+        String safeName = filename
+                .replaceAll("[\\\\/]+", "_")
+                .replaceAll("[\\p{Cntrl}]+", "")
+                .replaceAll("[^\\p{L}\\p{N}._-]+", "_")
+                .replaceAll("_+", "_")
+                .replaceAll("^\\.+", "")
+                .trim();
+
+        if (safeName.isBlank()) {
+            return "file";
+        }
+        if (safeName.length() > 120) {
+            return safeName.substring(safeName.length() - 120);
+        }
+        return safeName;
+    }
+
+    private void safeDeleteFile(String filePath) {
+        try {
+            fileStorageService.delete(filePath);
+        } catch (RuntimeException e) {
+            log.warn("清理文件失败: {}", filePath, e);
+        }
     }
 
     private DocumentVO toVO(Document doc) {

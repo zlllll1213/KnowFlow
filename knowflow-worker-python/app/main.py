@@ -9,7 +9,7 @@ KnowFlow Python Worker — 入口。
 4. 下载原始文件
 5. 解析文件内容（TXT / MD / PDF / DOCX）
 6. 文本切片
-7. 生成 embedding（当前为 mock）
+7. 生成 embedding
 8. 写入 document_chunk
 9. 更新 document/parse_task → DONE
 10. 失败时更新状态 FAILED，记录错误信息
@@ -27,19 +27,6 @@ from pathlib import Path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.config import config
-from app.queue import create_redis_client, block_pop_task
-from app.repository import (
-    get_connection,
-    fetch_task,
-    fetch_document,
-    update_task_status,
-    update_document_status,
-    insert_chunks,
-)
-from app.parser import parse_file, download_from_minio, download_from_local
-from app.splitter import split_text
-from app.embedding import generate_embeddings
-from app.types import TaskStatus, DocStatus
 
 # 日志配置
 logging.basicConfig(
@@ -51,40 +38,52 @@ log = logging.getLogger("worker")
 
 def process_task(task_id: int):
     """处理单个解析任务。"""
+    from app.embedding import generate_embeddings
+    from app.parser import parse_file
+    from app.repository import (
+        claim_task,
+        fetch_document,
+        fetch_task,
+        get_connection,
+        insert_chunks,
+        update_document_status,
+        update_task_status,
+    )
+    from app.splitter import split_text
+    from app.types import DocStatus, TaskStatus
+
     conn = get_connection()
     try:
-        # 1. 查询任务
-        task = fetch_task(conn, task_id)
+        # 1. 原子认领任务，避免重复消费和覆盖已完成状态
+        task = claim_task(conn, task_id, config.task_claim_stale_minutes)
         if task is None:
-            log.warning("任务不存在: taskId=%d", task_id)
-            return
-        if task.status == TaskStatus.CANCELLED:
-            log.info("任务已取消，跳过: taskId=%d", task_id)
+            current = fetch_task(conn, task_id)
+            if current is None:
+                log.warning("任务不存在: taskId=%d", task_id)
+            else:
+                log.info("任务当前不可处理，跳过: taskId=%d, status=%s", task_id, current.status)
             return
 
         log.info("开始处理任务: taskId=%d, docId=%d, kbId=%d",
                  task.id, task.document_id, task.kb_id)
 
-        # 2. 更新任务状态 → PROCESSING
-        update_task_status(conn, task.id, TaskStatus.PROCESSING)
-
-        # 3. 查询文档
+        # 2. 查询文档
         doc = fetch_document(conn, task.document_id)
         if doc is None:
             raise RuntimeError(f"文档不存在: docId={task.document_id}")
 
-        # 4. 更新文档状态 → PARSING
+        # 3. 更新文档状态 → PARSING
         update_document_status(conn, doc.id, DocStatus.PARSING)
 
-        # 5. 下载原始文件到临时目录
+        # 4. 下载原始文件到临时目录
         with tempfile.TemporaryDirectory() as tmpdir:
             local_path = os.path.join(tmpdir, doc.file_name or "document")
             _download_file(doc.file_path, local_path)
 
-            # 6. 解析文件
+            # 5. 解析文件
             text = parse_file(local_path, doc.file_type)
 
-        # 7. 切片
+        # 6. 切片
         chunks = split_text(text, doc.id, doc.kb_id)
 
         if not chunks:
@@ -93,16 +92,16 @@ def process_task(task_id: int):
             update_task_status(conn, task.id, TaskStatus.DONE)
             return
 
-        # 8. 更新文档状态 → EMBEDDING
+        # 7. 更新文档状态 → EMBEDDING
         update_document_status(conn, doc.id, DocStatus.EMBEDDING)
 
-        # 9. 生成 embedding（当前为 mock）
+        # 8. 生成 embedding
         generate_embeddings(chunks)
 
-        # 10. 写入 document_chunk
+        # 9. 写入 document_chunk
         insert_chunks(conn, chunks)
 
-        # 11. 更新状态 → DONE
+        # 10. 更新状态 → DONE
         update_document_status(conn, doc.id, DocStatus.DONE, len(chunks))
         update_task_status(conn, task.id, TaskStatus.DONE)
 
@@ -113,11 +112,12 @@ def process_task(task_id: int):
         log.error("任务处理失败: taskId=%d, error=%s", task_id, e)
         traceback.print_exc()
         try:
-            update_task_status(conn, task_id, TaskStatus.FAILED, str(e))
+            error_message = str(e)
+            update_task_status(conn, task_id, TaskStatus.FAILED, error_message)
             # 同时更新文档状态
             task = fetch_task(conn, task_id)
             if task:
-                update_document_status(conn, task.document_id, DocStatus.FAILED)
+                update_document_status(conn, task.document_id, DocStatus.FAILED, error_message=error_message)
         except Exception:
             log.error("更新失败状态时出错", exc_info=True)
     finally:
@@ -126,6 +126,8 @@ def process_task(task_id: int):
 
 def _download_file(file_path: str, local_path: str):
     """根据存储类型下载文件。"""
+    from app.parser import download_from_local, download_from_minio
+
     if config.storage_type == "minio":
         from minio import Minio
         client = Minio(
@@ -139,14 +141,55 @@ def _download_file(file_path: str, local_path: str):
         download_from_local(config.storage_local_path, file_path, local_path)
 
 
+def recover_tasks_on_start(redis_client):
+    """启动时恢复未投递或卡住的解析任务。"""
+    if not config.task_recovery_on_start:
+        return
+
+    from app.queue import push_task
+    from app.repository import get_connection, list_recoverable_tasks
+
+    conn = get_connection()
+    try:
+        task_ids = list_recoverable_tasks(
+            conn,
+            config.task_claim_stale_minutes,
+            config.task_recovery_limit,
+        )
+    finally:
+        conn.close()
+
+    for task_id in task_ids:
+        push_task(redis_client, task_id)
+
+    if task_ids:
+        log.info("启动恢复任务已重新入队: count=%d, ids=%s", len(task_ids), task_ids[:20])
+    else:
+        log.info("启动恢复检查完成，无需恢复的任务")
+
+
 def main():
     """Worker 主循环。"""
+    errors = config.validate()
+    if errors:
+        for error in errors:
+            log.error("配置错误: %s", error)
+        raise SystemExit(2)
+    config.ensure_local_storage_dir()
+
+    if "--check" in sys.argv:
+        log.info("KnowFlow Python Worker 配置检查通过")
+        return
+
     log.info("KnowFlow Python Worker 启动")
     log.info("配置: redis=%s, db=%s, storage=%s, embedding=%s, concurrency=%d",
              config.redis_url, config.db_dsn,
              config.storage_type, config.embedding_provider, config.concurrency)
 
+    from app.queue import block_pop_task, create_redis_client
+
     redis_client = create_redis_client()
+    recover_tasks_on_start(redis_client)
 
     # 简单的单线程循环（后续可改为多线程/多进程）
     while True:

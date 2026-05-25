@@ -1,9 +1,13 @@
 """
 Embedding 生成模块。
-第一版提供 mock embedding（全零向量），后续接入 OpenAI / Ollama 等真实 API。
+支持 mock、OpenAI-compatible API 和 Ollama，本地开发可继续使用 mock。
 """
 
 import logging
+from typing import Iterable
+
+import httpx
+
 from app.config import config
 from app.types import DocumentChunk
 
@@ -11,15 +15,13 @@ log = logging.getLogger(__name__)
 
 
 def generate_embeddings(chunks: list[DocumentChunk]) -> None:
-    """
-    为每个 chunk 生成 embedding 向量，原地修改。
-    """
+    """为每个 chunk 生成 embedding 向量，原地修改。"""
     provider = config.embedding_provider.lower()
 
     if provider == "mock":
         _mock_embed(chunks)
-    elif provider == "openai":
-        _openai_embed(chunks)
+    elif provider in {"openai", "deepseek"}:
+        _openai_compatible_embed(chunks)
     elif provider == "ollama":
         _ollama_embed(chunks)
     else:
@@ -27,38 +29,59 @@ def generate_embeddings(chunks: list[DocumentChunk]) -> None:
 
 
 def _mock_embed(chunks: list[DocumentChunk]) -> None:
-    """
-    模拟 embedding — 使用全零向量。
-    明确标记为 MOCK，仅用于开发测试流程。
-    """
     dim = config.embedding_dim
-    mock_vec = [0.0] * dim
     for chunk in chunks:
-        chunk.embedding = mock_vec
+        chunk.embedding = [0.0] * dim
     log.warning("MOCK embedding: 生成了 %d 个零向量 (dim=%d)", len(chunks), dim)
 
 
-def _openai_embed(chunks: list[DocumentChunk]) -> None:
-    """
-    调用 OpenAI / 兼容 API 生成 embedding。
-    TODO: 实现真实 API 调用。
-    """
-    # import httpx
-    # texts = [c.content for c in chunks]
-    # resp = httpx.post(
-    #     f"{config.embedding_base_url}/embeddings",
-    #     headers={"Authorization": f"Bearer {config.embedding_api_key}"},
-    #     json={"model": config.embedding_model, "input": texts},
-    # )
-    # data = resp.json()
-    # for i, chunk in enumerate(chunks):
-    #     chunk.embedding = data["data"][i]["embedding"]
-    raise NotImplementedError("OpenAI embedding 尚未实现 — 请先配置 API key 和 base URL")
+def _openai_compatible_embed(chunks: list[DocumentChunk]) -> None:
+    if not config.embedding_api_key:
+        raise RuntimeError("WORKER_EMBEDDING_API_KEY 未配置")
+
+    base_url = (config.embedding_base_url or "https://api.openai.com/v1").rstrip("/")
+    batch_size = config.embedding_batch_size
+    headers = {"Authorization": f"Bearer {config.embedding_api_key}"}
+
+    with httpx.Client(timeout=config.embedding_timeout_seconds) as client:
+        for batch in _batched(chunks, batch_size):
+            texts = [chunk.content for chunk in batch]
+            resp = client.post(
+                f"{base_url}/embeddings",
+                headers=headers,
+                json={"model": config.embedding_model, "input": texts},
+            )
+            resp.raise_for_status()
+            payload = resp.json()
+            data = sorted(payload.get("data", []), key=lambda item: item.get("index", 0))
+            if len(data) != len(batch):
+                raise RuntimeError(f"embedding 返回数量不匹配: expected={len(batch)}, got={len(data)}")
+            for chunk, item in zip(batch, data):
+                chunk.embedding = item["embedding"]
+
+    log.info("OpenAI-compatible embedding 完成: chunks=%d, model=%s", len(chunks), config.embedding_model)
 
 
 def _ollama_embed(chunks: list[DocumentChunk]) -> None:
-    """
-    调用 Ollama 本地 API 生成 embedding。
-    TODO: 实现。
-    """
-    raise NotImplementedError("Ollama embedding 尚未实现")
+    base_url = (config.embedding_base_url or "http://localhost:11434").rstrip("/")
+    model = config.embedding_model or "nomic-embed-text"
+
+    with httpx.Client(timeout=config.embedding_timeout_seconds) as client:
+        for chunk in chunks:
+            resp = client.post(
+                f"{base_url}/api/embeddings",
+                json={"model": model, "prompt": chunk.content},
+            )
+            resp.raise_for_status()
+            embedding = resp.json().get("embedding")
+            if not embedding:
+                raise RuntimeError("Ollama embedding 未返回向量")
+            chunk.embedding = embedding
+
+    log.info("Ollama embedding 完成: chunks=%d, model=%s", len(chunks), model)
+
+
+def _batched(items: list[DocumentChunk], size: int) -> Iterable[list[DocumentChunk]]:
+    size = max(size, 1)
+    for idx in range(0, len(items), size):
+        yield items[idx:idx + size]

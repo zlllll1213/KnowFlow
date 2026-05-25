@@ -46,7 +46,7 @@
 <script setup lang="ts">
 import { ref, reactive } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import { ElMessage } from 'element-plus/es/components/message/index.mjs'
 import { register } from '@/api/auth'
 import type { FormInstance, FormRules } from 'element-plus'
 

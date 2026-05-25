@@ -1,6 +1,7 @@
 package com.knowflow.config;
 
 import com.knowflow.security.JwtAuthenticationFilter;
+import jakarta.servlet.DispatcherType;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -29,6 +30,7 @@ public class SecurityConfig {
             .csrf(AbstractHttpConfigurer::disable)
             .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> auth
+                .dispatcherTypeMatchers(DispatcherType.ERROR, DispatcherType.ASYNC).permitAll()
                 .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                 // Swagger / OpenAPI 文档
                 .requestMatchers(
@@ -37,7 +39,7 @@ public class SecurityConfig {
                     "/doc.html", "/webjars/**"
                 ).permitAll()
                 // 公开接口
-                .requestMatchers("/api/auth/register", "/api/auth/login").permitAll()
+                .requestMatchers("/api/auth/register", "/api/auth/login", "/api/health", "/error").permitAll()
                 // 其余接口需要认证
                 .anyRequest().authenticated()
             )

@@ -55,7 +55,8 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus/es/components/message/index.mjs'
+import { ElMessageBox } from 'element-plus/es/components/message-box/index.mjs'
 import DocumentUpload from '@/components/DocumentUpload.vue'
 import { getKbDetail } from '@/api/kb'
 import { getDocumentList, uploadDocument, deleteDocument } from '@/api/document'

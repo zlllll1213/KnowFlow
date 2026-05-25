@@ -4,12 +4,20 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.knowflow.common.BusinessException;
 import com.knowflow.dto.KbCreateRequest;
 import com.knowflow.dto.KbUpdateRequest;
+import com.knowflow.entity.ChatMessage;
+import com.knowflow.entity.ChatSession;
+import com.knowflow.entity.Document;
 import com.knowflow.entity.KnowledgeBase;
+import com.knowflow.mapper.ChatMessageMapper;
+import com.knowflow.mapper.ChatSessionMapper;
+import com.knowflow.mapper.DocumentMapper;
 import com.knowflow.mapper.KnowledgeBaseMapper;
+import com.knowflow.service.DocumentService;
 import com.knowflow.service.KnowledgeBaseService;
 import com.knowflow.vo.KbVO;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.util.List;
@@ -20,6 +28,10 @@ import java.util.stream.Collectors;
 public class KnowledgeBaseServiceImpl implements KnowledgeBaseService {
 
     private final KnowledgeBaseMapper kbMapper;
+    private final DocumentMapper documentMapper;
+    private final DocumentService documentService;
+    private final ChatSessionMapper chatSessionMapper;
+    private final ChatMessageMapper chatMessageMapper;
 
     @Override
     public KbVO create(Long userId, KbCreateRequest request) {
@@ -61,8 +73,24 @@ public class KnowledgeBaseServiceImpl implements KnowledgeBaseService {
     }
 
     @Override
+    @Transactional
     public void delete(Long userId, Long kbId) {
         KnowledgeBase kb = getAndCheckOwner(userId, kbId);
+
+        List<Document> docs = documentMapper.selectList(
+                new LambdaQueryWrapper<Document>()
+                        .eq(Document::getKbId, kbId)
+                        .eq(Document::getUserId, userId));
+        for (Document doc : docs) {
+            documentService.delete(userId, doc.getId());
+        }
+
+        chatMessageMapper.delete(new LambdaQueryWrapper<ChatMessage>()
+                .eq(ChatMessage::getKbId, kbId)
+                .eq(ChatMessage::getUserId, userId));
+        chatSessionMapper.delete(new LambdaQueryWrapper<ChatSession>()
+                .eq(ChatSession::getKbId, kbId)
+                .eq(ChatSession::getUserId, userId));
         kbMapper.deleteById(kb.getId());
     }
 

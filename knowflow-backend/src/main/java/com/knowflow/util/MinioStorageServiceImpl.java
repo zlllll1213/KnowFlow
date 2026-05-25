@@ -1,7 +1,9 @@
 package com.knowflow.util;
 
 import com.knowflow.config.MinioConfig;
+import io.minio.BucketExistsArgs;
 import io.minio.GetObjectArgs;
+import io.minio.MakeBucketArgs;
 import io.minio.MinioClient;
 import io.minio.PutObjectArgs;
 import io.minio.RemoveObjectArgs;
@@ -25,17 +27,19 @@ public class MinioStorageServiceImpl implements FileStorageService {
 
     private final MinioClient minioClient;
     private final MinioConfig minioConfig;
+    private volatile boolean bucketReady;
 
     @Override
     public String upload(MultipartFile file, String objectKey) {
         try {
             String bucket = minioConfig.getBucket();
+            ensureBucket(bucket);
             minioClient.putObject(
                     PutObjectArgs.builder()
                             .bucket(bucket)
                             .object(objectKey)
                             .stream(file.getInputStream(), file.getSize(), -1)
-                            .contentType(file.getContentType())
+                            .contentType(file.getContentType() != null ? file.getContentType() : "application/octet-stream")
                             .build());
             log.info("文件已上传至 MinIO: bucket={}, objectKey={}", bucket, objectKey);
             return objectKey;
@@ -70,6 +74,31 @@ public class MinioStorageServiceImpl implements FileStorageService {
             log.info("MinIO 文件已删除: bucket={}, objectKey={}", bucket, objectKey);
         } catch (Exception e) {
             log.warn("MinIO 文件删除失败: {}", objectKey, e);
+        }
+    }
+
+    private void ensureBucket(String bucket) throws Exception {
+        if (bucketReady) {
+            return;
+        }
+
+        synchronized (this) {
+            if (bucketReady) {
+                return;
+            }
+
+            boolean exists = minioClient.bucketExists(
+                    BucketExistsArgs.builder()
+                            .bucket(bucket)
+                            .build());
+            if (!exists) {
+                minioClient.makeBucket(
+                        MakeBucketArgs.builder()
+                                .bucket(bucket)
+                                .build());
+                log.info("MinIO bucket 已创建: {}", bucket);
+            }
+            bucketReady = true;
         }
     }
 }

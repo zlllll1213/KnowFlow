@@ -7,6 +7,7 @@ import com.knowflow.common.BusinessException;
 import com.knowflow.dto.ChatAskRequest;
 import com.knowflow.dto.ChatSessionCreateRequest;
 import com.knowflow.dto.RagResponse;
+import com.knowflow.dto.RagSourceChunk;
 import com.knowflow.entity.ChatMessage;
 import com.knowflow.entity.ChatSession;
 import com.knowflow.entity.KnowledgeBase;
@@ -19,9 +20,12 @@ import com.knowflow.vo.ChatMessageVO;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -62,36 +66,18 @@ public class ChatServiceImpl implements ChatService {
     public ChatMessageVO ask(Long userId, ChatAskRequest request) {
         checkKbOwnership(userId, request.getKbId());
 
-        // 校验会话归属
-        ChatSession session = sessionMapper.selectById(request.getSessionId());
-        if (session == null || !session.getUserId().equals(userId)) {
-            throw new BusinessException(40030, "无权访问该会话");
-        }
-
-        // 保存用户问题
-        ChatMessage userMsg = new ChatMessage();
-        userMsg.setSessionId(request.getSessionId());
-        userMsg.setKbId(request.getKbId());
-        userMsg.setUserId(userId);
-        userMsg.setRole("user");
-        userMsg.setContent(request.getQuestion());
-        userMsg.setSources("[]");
-        messageMapper.insert(userMsg);
+        ChatSession session = checkSessionOwnership(userId, request.getSessionId(), request.getKbId());
+        saveMessage(userId, request.getSessionId(), request.getKbId(), "user", request.getQuestion(), Collections.emptyList());
 
         // 调用 Go RAG Service（不可用时自动降级 mock）
         RagResponse ragResponse = ragClient.ask(request.getKbId(), request.getQuestion(), 5);
         String answer = ragResponse.getAnswer();
-        String sourcesJson = serializeSources(ragResponse);
+        List<RagSourceChunk> sources = ragResponse.getSources() == null
+                ? Collections.emptyList()
+                : ragResponse.getSources();
 
         // 保存助手回答
-        ChatMessage assistantMsg = new ChatMessage();
-        assistantMsg.setSessionId(request.getSessionId());
-        assistantMsg.setKbId(request.getKbId());
-        assistantMsg.setUserId(userId);
-        assistantMsg.setRole("assistant");
-        assistantMsg.setContent(answer);
-        assistantMsg.setSources(sourcesJson);
-        messageMapper.insert(assistantMsg);
+        ChatMessage assistantMsg = saveMessage(userId, request.getSessionId(), request.getKbId(), "assistant", answer, sources);
 
         // 更新会话时间
         sessionMapper.updateById(session);
@@ -100,9 +86,72 @@ public class ChatServiceImpl implements ChatService {
                 .id(assistantMsg.getId())
                 .role(assistantMsg.getRole())
                 .content(assistantMsg.getContent())
-                .sources(ragResponse.getSources())
+                .sources(sources)
                 .createdAt(assistantMsg.getCreatedAt())
                 .build();
+    }
+
+    @Override
+    public SseEmitter askStream(Long userId, ChatAskRequest request) {
+        checkKbOwnership(userId, request.getKbId());
+        ChatSession session = checkSessionOwnership(userId, request.getSessionId(), request.getKbId());
+        saveMessage(userId, request.getSessionId(), request.getKbId(), "user", request.getQuestion(), Collections.emptyList());
+
+        SseEmitter emitter = new SseEmitter(120_000L);
+        CompletableFuture.runAsync(() -> {
+            StringBuilder answer = new StringBuilder();
+            ListHolder sourcesHolder = new ListHolder();
+            AtomicBoolean completed = new AtomicBoolean(false);
+
+            ragClient.askStream(request.getKbId(), request.getQuestion(), 5, new RagClient.StreamListener() {
+                @Override
+                public void onToken(String token) {
+                    if (token == null || token.isEmpty()) {
+                        return;
+                    }
+                    answer.append(token);
+                    sendSse(emitter, "token", Collections.singletonMap("content", token));
+                }
+
+                @Override
+                public void onSources(List<RagSourceChunk> sources) {
+                    sourcesHolder.sources = sources == null ? Collections.emptyList() : sources;
+                    sendSse(emitter, "sources", sourcesHolder.sources);
+                }
+
+                @Override
+                public void onError(String message) {
+                    if (completed.compareAndSet(false, true)) {
+                        sendSse(emitter, "error", Collections.singletonMap("message", message));
+                        emitter.complete();
+                    }
+                }
+
+                @Override
+                public void onDone() {
+                    if (!completed.compareAndSet(false, true)) {
+                        return;
+                    }
+                    ChatMessage assistantMsg = saveMessage(userId, request.getSessionId(), request.getKbId(),
+                            "assistant", answer.toString(), sourcesHolder.sources);
+                    sessionMapper.updateById(session);
+                    sendSse(emitter, "done", ChatMessageVO.builder()
+                            .id(assistantMsg.getId())
+                            .role(assistantMsg.getRole())
+                            .content(assistantMsg.getContent())
+                            .sources(sourcesHolder.sources)
+                            .createdAt(assistantMsg.getCreatedAt())
+                            .build());
+                    emitter.complete();
+                }
+            });
+        }).exceptionally(e -> {
+            log.warn("流式问答失败", e);
+            sendSse(emitter, "error", Collections.singletonMap("message", e.getMessage()));
+            emitter.complete();
+            return null;
+        });
+        return emitter;
     }
 
     @Override
@@ -132,7 +181,9 @@ public class ChatServiceImpl implements ChatService {
 
     private String serializeSources(RagResponse ragResponse) {
         try {
-            return objectMapper.writeValueAsString(ragResponse.getSources());
+            return objectMapper.writeValueAsString(ragResponse.getSources() == null
+                    ? Collections.emptyList()
+                    : ragResponse.getSources());
         } catch (JsonProcessingException e) {
             log.warn("sources 序列化失败", e);
             return "[]";
@@ -162,5 +213,42 @@ public class ChatServiceImpl implements ChatService {
         if (!kb.getUserId().equals(userId)) {
             throw new BusinessException(40030, "无权访问该知识库");
         }
+    }
+
+    private ChatSession checkSessionOwnership(Long userId, Long sessionId, Long kbId) {
+        ChatSession session = sessionMapper.selectById(sessionId);
+        if (session == null || !session.getUserId().equals(userId) || !session.getKbId().equals(kbId)) {
+            throw new BusinessException(40030, "无权访问该会话");
+        }
+        return session;
+    }
+
+    private ChatMessage saveMessage(Long userId, Long sessionId, Long kbId, String role, String content,
+                                    List<RagSourceChunk> sources) {
+        ChatMessage msg = new ChatMessage();
+        msg.setSessionId(sessionId);
+        msg.setKbId(kbId);
+        msg.setUserId(userId);
+        msg.setRole(role);
+        msg.setContent(content);
+        try {
+            msg.setSources(objectMapper.writeValueAsString(sources == null ? Collections.emptyList() : sources));
+        } catch (JsonProcessingException e) {
+            msg.setSources("[]");
+        }
+        messageMapper.insert(msg);
+        return msg;
+    }
+
+    private void sendSse(SseEmitter emitter, String event, Object data) {
+        try {
+            emitter.send(SseEmitter.event().name(event).data(data));
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    private static class ListHolder {
+        private List<RagSourceChunk> sources = Collections.emptyList();
     }
 }

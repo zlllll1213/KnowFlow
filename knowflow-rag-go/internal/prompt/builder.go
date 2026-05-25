@@ -15,6 +15,10 @@ func BuildMessages(question string, sources []types.SourceChunk) []llm.Message {
 	sb.WriteString("如果参考资料中没有相关信息，请明确说明无法从知识库中找到答案，不要编造。\n\n")
 	sb.WriteString("参考资料：\n---\n")
 
+	if len(sources) == 0 {
+		sb.WriteString("（没有检索到相关资料）\n---\n")
+	}
+
 	for _, s := range sources {
 		sb.WriteString(fmt.Sprintf("[文档：%s，片段 %d]\n%s\n---\n",
 			s.FileName, s.ChunkIndex, truncate(s.Content, 500)))
