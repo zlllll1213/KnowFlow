@@ -12,6 +12,9 @@ export interface ChatMessageVO {
   role: 'user' | 'assistant'
   content: string
   sources?: RagSourceChunk[]
+  agentMode?: boolean
+  intent?: AgentResponse['intent'] | string
+  confidence?: number
   createdAt: string
 }
 
@@ -42,6 +45,7 @@ export interface AgentResponse {
   sources: RagSourceChunk[]
   confidence: number
   trace: AgentTraceStep[]
+  latencyMs?: number
 }
 
 /** @deprecated 使用 RagSourceChunk */

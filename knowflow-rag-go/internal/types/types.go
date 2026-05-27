@@ -35,4 +35,5 @@ type AgentResponse struct {
 	Sources    []SourceChunk    `json:"sources"`
 	Confidence float64          `json:"confidence"`
 	Trace      []AgentTraceStep `json:"trace"`
+	LatencyMs  int64            `json:"latencyMs"`
 }

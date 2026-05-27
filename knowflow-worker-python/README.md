@@ -61,11 +61,14 @@ WORKER_EMBEDDING_TIMEOUT_SECONDS=60
 任务可靠性配置：
 
 ```env
+WORKER_CONCURRENCY=2
 # Worker 启动时会把 PENDING 和超时 PROCESSING 任务重新投递到 Redis
 WORKER_TASK_RECOVERY_ON_START=true
 WORKER_TASK_CLAIM_STALE_MINUTES=30
 WORKER_TASK_RECOVERY_LIMIT=500
 ```
+
+`WORKER_CONCURRENCY` 控制线程池并发数。主线程只负责从 Redis 队列消费 taskId，实际解析、切片、embedding 和写库由线程池执行；同一个 taskId 会先经过数据库 `claim_task` 原子认领，重复入队时只有一个线程能处理成功。
 
 ### 3. 启动 Worker
 

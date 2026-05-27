@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/knowflow/rag-go/internal/agent"
 	"github.com/knowflow/rag-go/internal/embedding"
 	"github.com/knowflow/rag-go/internal/llm"
 	"github.com/knowflow/rag-go/internal/prompt"
@@ -16,15 +17,16 @@ import (
 )
 
 type RAGService struct {
-	retriever *retriever.PgRetriever
-	embedder  embedding.Provider
-	llm       llm.Provider
-	topK      int
-	maxTopK   int
+	retriever    *retriever.PgRetriever
+	embedder     embedding.Provider
+	llm          llm.Provider
+	topK         int
+	maxTopK      int
+	embeddingDim int
 }
 
-func New(retriever *retriever.PgRetriever, embedder embedding.Provider, llmProvider llm.Provider, topK int, maxTopK int) *RAGService {
-	return &RAGService{retriever: retriever, embedder: embedder, llm: llmProvider, topK: topK, maxTopK: maxTopK}
+func New(retriever *retriever.PgRetriever, embedder embedding.Provider, llmProvider llm.Provider, topK int, maxTopK int, embeddingDim int) *RAGService {
+	return &RAGService{retriever: retriever, embedder: embedder, llm: llmProvider, topK: topK, maxTopK: maxTopK, embeddingDim: embeddingDim}
 }
 
 // Ask 同步问答。
@@ -37,6 +39,8 @@ func (s *RAGService) Ask(ctx context.Context, req types.RagRequest) (*types.RagR
 	queryEmbedding, err := s.embedder.Embed(ctx, req.Question)
 	if err != nil {
 		log.Printf("query embedding 生成失败，回退关键词检索: %v", err)
+	} else if err := s.validateEmbeddingDim(queryEmbedding); err != nil {
+		return nil, err
 	}
 	embeddingMs := time.Since(embeddingStart).Milliseconds()
 
@@ -93,6 +97,9 @@ func (s *RAGService) AskStream(ctx context.Context, req types.RagRequest) (<-cha
 		queryEmbedding, err := s.embedder.Embed(ctx, req.Question)
 		if err != nil {
 			log.Printf("query embedding 生成失败，回退关键词检索: %v", err)
+		} else if err := s.validateEmbeddingDim(queryEmbedding); err != nil {
+			errCh <- err
+			return
 		}
 
 		// 1. 检索
@@ -133,14 +140,16 @@ func (s *RAGService) AskStream(ctx context.Context, req types.RagRequest) (<-cha
 func (s *RAGService) AskAgent(ctx context.Context, req types.RagRequest) (*types.AgentResponse, error) {
 	start := time.Now()
 	topK := s.normalizeTopK(req.TopK)
-	intent, trace := routeIntent(req.Question)
+	intent, detail := agent.RouteIntent(req.Question)
+	trace := []types.AgentTraceStep{{Step: "router", Detail: detail}}
 
-	query := buildRetrievalQuery(req.Question, intent)
-	trace = append(trace, types.AgentTraceStep{Step: "retriever", Detail: "query=" + query})
+	query := agent.BuildRetrievalQuery(req.Question, intent)
 
 	queryEmbedding, err := s.embedder.Embed(ctx, query)
 	if err != nil {
 		log.Printf("agent query embedding 生成失败，回退关键词检索: %v", err)
+	} else if err := s.validateEmbeddingDim(queryEmbedding); err != nil {
+		return nil, err
 	}
 
 	retrieveStart := time.Now()
@@ -149,14 +158,23 @@ func (s *RAGService) AskAgent(ctx context.Context, req types.RagRequest) (*types
 		return nil, fmt.Errorf("Agent 检索失败: %w", err)
 	}
 	retrieveMs := time.Since(retrieveStart).Milliseconds()
-	confidence := confidenceFromSources(sources)
-	trace = append(trace, types.AgentTraceStep{Step: "citation_guard", Detail: fmt.Sprintf("sources=%d confidence=%.2f", len(sources), confidence)})
+	trace = append(trace, types.AgentTraceStep{Step: "retriever", Detail: fmt.Sprintf("检索到 %d 个相关片段", len(sources))})
 
-	if len(sources) == 0 || confidence < 0.2 || intent == "unknown" {
-		answer := insufficientAnswer()
+	guard := agent.EvaluateCitations(sources)
+	trace = append(trace, types.AgentTraceStep{Step: "citation_guard", Detail: guard.Detail})
+	if !guard.AllowAnswer {
 		elapsed := time.Since(start).Milliseconds()
+		trace = append(trace, types.AgentTraceStep{Step: "answer", Detail: "资料不足，未调用 LLM"})
+		s.logCall(ctx, "agent", intent, req, topK, len(sources), retrieveMs, 0, elapsed, guard.Confidence, trace)
+		return &types.AgentResponse{Intent: intent, Answer: agent.InsufficientAnswer, Sources: sources, Confidence: guard.Confidence, Trace: trace, LatencyMs: elapsed}, nil
+	}
+
+	if intent == agent.IntentUnknown {
+		elapsed := time.Since(start).Milliseconds()
+		confidence := minFloat(guard.Confidence, 0.3)
+		trace = append(trace, types.AgentTraceStep{Step: "answer", Detail: "意图 unknown，未调用 LLM"})
 		s.logCall(ctx, "agent", intent, req, topK, len(sources), retrieveMs, 0, elapsed, confidence, trace)
-		return &types.AgentResponse{Intent: intent, Answer: answer, Sources: sources, Confidence: confidence, Trace: trace}, nil
+		return &types.AgentResponse{Intent: intent, Answer: agent.UnknownAnswer, Sources: sources, Confidence: confidence, Trace: trace, LatencyMs: elapsed}, nil
 	}
 
 	llmStart := time.Now()
@@ -165,11 +183,14 @@ func (s *RAGService) AskAgent(ctx context.Context, req types.RagRequest) (*types
 		return nil, fmt.Errorf("Agent 回答生成失败: %w", err)
 	}
 	llmMs := time.Since(llmStart).Milliseconds()
-	trace = append(trace, types.AgentTraceStep{Step: "answer", Detail: fmt.Sprintf("intent=%s llmMs=%d", intent, llmMs)})
+	if guard.Prefix != "" {
+		answer = guard.Prefix + "\n\n" + answer
+	}
+	trace = append(trace, types.AgentTraceStep{Step: "answer", Detail: fmt.Sprintf("基于资料生成回答，intent=%s llmMs=%d", intent, llmMs)})
 	elapsed := time.Since(start).Milliseconds()
-	s.logCall(ctx, "agent", intent, req, topK, len(sources), retrieveMs, llmMs, elapsed, confidence, trace)
+	s.logCall(ctx, "agent", intent, req, topK, len(sources), retrieveMs, llmMs, elapsed, guard.Confidence, trace)
 
-	return &types.AgentResponse{Intent: intent, Answer: answer, Sources: sources, Confidence: confidence, Trace: trace}, nil
+	return &types.AgentResponse{Intent: intent, Answer: answer, Sources: sources, Confidence: guard.Confidence, Trace: trace, LatencyMs: elapsed}, nil
 }
 
 func (s *RAGService) AskAgentStream(ctx context.Context, req types.RagRequest) (<-chan string, <-chan []types.SourceChunk, <-chan types.AgentResponse, <-chan error) {
@@ -207,37 +228,17 @@ func (s *RAGService) normalizeTopK(topK int) int {
 	return topK
 }
 
-func routeIntent(question string) (string, []types.AgentTraceStep) {
-	q := strings.ToLower(question)
-	intent := "qa"
-	switch {
-	case strings.Contains(q, "总结") || strings.Contains(q, "summary") || strings.Contains(q, "概括"):
-		intent = "summarize"
-	case strings.Contains(q, "学习计划") || strings.Contains(q, "study plan") || strings.Contains(q, "怎么学"):
-		intent = "study_plan"
-	case strings.Contains(q, "代码") || strings.Contains(q, "接口") || strings.Contains(q, "报错") || strings.Contains(q, "bug") || strings.Contains(q, "api"):
-		intent = "code_analysis"
-	case strings.Contains(q, "报告") || strings.Contains(q, "report"):
-		intent = "report"
-	case strings.TrimSpace(q) == "":
-		intent = "unknown"
+func (s *RAGService) validateEmbeddingDim(vector []float32) error {
+	if len(vector) == 0 {
+		return nil
 	}
-	return intent, []types.AgentTraceStep{{Step: "router", Detail: "intent=" + intent}}
-}
-
-func buildRetrievalQuery(question string, intent string) string {
-	switch intent {
-	case "summarize":
-		return question + " 总结 重点 结论"
-	case "study_plan":
-		return question + " 学习 路线 阶段 计划"
-	case "code_analysis":
-		return question + " 代码 接口 错误 配置 实现"
-	case "report":
-		return question + " 报告 背景 结论 依据"
-	default:
-		return question
+	if s.embeddingDim <= 0 {
+		return nil
 	}
+	if len(vector) != s.embeddingDim {
+		return fmt.Errorf("embedding dimension mismatch: expected=%d, actual=%d", s.embeddingDim, len(vector))
+	}
+	return nil
 }
 
 func confidenceFromSources(sources []types.SourceChunk) float64 {
@@ -252,6 +253,13 @@ func confidenceFromSources(sources []types.SourceChunk) float64 {
 		return 1
 	}
 	return score
+}
+
+func minFloat(a float64, b float64) float64 {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 func insufficientAnswer() string {

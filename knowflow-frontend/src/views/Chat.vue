@@ -81,7 +81,16 @@
 
     <!-- Right: Source Panel -->
     <div class="source-column">
-      <SourcePanel :sources="sources" />
+      <div class="source-stack">
+        <SourcePanel :sources="sources" />
+        <AgentTracePanel
+          v-if="agentMode || agentTrace.length"
+          :trace="agentTrace"
+          :confidence="agentConfidence"
+          :intent="agentIntent"
+          :latency-ms="agentLatencyMs"
+        />
+      </div>
     </div>
   </div>
 </template>
@@ -92,10 +101,11 @@ import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus/es/components/message/index.mjs'
 import ChatMessage from '@/components/ChatMessage.vue'
 import SourcePanel from '@/components/SourcePanel.vue'
+import AgentTracePanel from '@/components/AgentTracePanel.vue'
 import { getKbList } from '@/api/kb'
 import { createSession, listSessions, askQuestionStream, askAgentStream, getChatHistory } from '@/api/chat'
 import type { KbVO } from '@/types/kb'
-import type { ChatSessionVO, ChatMessageVO, RagSourceChunk } from '@/types/chat'
+import type { AgentResponse, AgentTraceStep, ChatSessionVO, ChatMessageVO, RagSourceChunk } from '@/types/chat'
 
 const route = useRoute()
 const kbs = ref<KbVO[]>([])
@@ -107,6 +117,10 @@ const inputText = ref('')
 const answering = ref(false)
 const agentMode = ref(false)
 const sources = ref<RagSourceChunk[]>([])
+const agentTrace = ref<AgentTraceStep[]>([])
+const agentConfidence = ref<number | null>(null)
+const agentIntent = ref<AgentResponse['intent'] | string | null>(null)
+const agentLatencyMs = ref<number | null>(null)
 const messagesRef = ref<HTMLElement>()
 
 const currentKbName = computed(() => kbs.value.find(k => k.id === selectedKbId.value)?.name ?? '')
@@ -124,7 +138,7 @@ async function onKbChange() {
   sessions.value = []
   currentSession.value = null
   messages.value = []
-  sources.value = []
+  resetEvidence()
   await loadSessions()
 }
 
@@ -137,7 +151,7 @@ async function loadSessions() {
 async function selectSession(s: ChatSessionVO) {
   currentSession.value = s
   messages.value = (await getChatHistory(s.id).catch(() => ({ records: [] }))).records
-  sources.value = []
+  resetEvidence()
   scrollToBottom()
 }
 
@@ -165,12 +179,13 @@ async function sendMessage() {
   scrollToBottom()
 
   answering.value = true
-  sources.value = []
+  resetEvidence()
   const assistantMsg: ChatMessageVO = {
     id: -Date.now(),
     role: 'assistant',
     content: '',
     sources: [],
+    agentMode: agentMode.value,
     createdAt: new Date().toISOString(),
   }
   messages.value.push(assistantMsg)
@@ -193,13 +208,35 @@ async function sendMessage() {
           sources.value = items ?? []
           assistantMsg.sources = sources.value
         },
+        onMeta: (meta) => {
+          if (!agentMode.value) return
+          agentIntent.value = meta.intent ?? agentIntent.value
+          agentConfidence.value = typeof meta.confidence === 'number' ? meta.confidence : agentConfidence.value
+          agentTrace.value = meta.trace ?? agentTrace.value
+          agentLatencyMs.value = typeof meta.latencyMs === 'number' ? meta.latencyMs : agentLatencyMs.value
+          assistantMsg.intent = agentIntent.value ?? undefined
+          assistantMsg.confidence = agentConfidence.value ?? undefined
+        },
         onDone: (message) => {
           const idx = messages.value.findIndex(m => m.id === assistantMsg.id)
-          const normalized = 'answer' in message
-            ? { ...assistantMsg, content: message.answer, sources: message.sources }
+          const normalized: ChatMessageVO = 'answer' in message
+            ? {
+                ...assistantMsg,
+                content: message.answer,
+                sources: message.sources,
+                agentMode: true,
+                intent: message.intent,
+                confidence: message.confidence,
+              }
             : message
           if (idx >= 0) messages.value[idx] = normalized
           sources.value = normalized.sources ?? sources.value
+          if ('trace' in message) {
+            agentTrace.value = message.trace ?? agentTrace.value
+            agentConfidence.value = message.confidence
+            agentIntent.value = message.intent
+            agentLatencyMs.value = message.latencyMs ?? agentLatencyMs.value
+          }
         },
       }
     )
@@ -222,6 +259,14 @@ async function scrollToBottom() {
 
 function formatDate(d: string) {
   return d ? new Date(d).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : ''
+}
+
+function resetEvidence() {
+  sources.value = []
+  agentTrace.value = []
+  agentConfidence.value = null
+  agentIntent.value = null
+  agentLatencyMs.value = null
 }
 </script>
 
@@ -289,6 +334,9 @@ function formatDate(d: string) {
 .source-column {
   width: 260px; flex-shrink: 0; background: var(--color-surface);
   border-left: 1px solid var(--color-border); overflow: hidden;
+}
+.source-stack {
+  height: 100%; display: grid; grid-template-rows: minmax(0, 1fr) minmax(220px, 42%);
 }
 
 @media (max-width: 1024px) {

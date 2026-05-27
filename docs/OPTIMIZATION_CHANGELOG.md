@@ -1,5 +1,41 @@
 # KnowFlow Optimization Changelog
 
+## Staged Execution Status · 2026-05-27
+
+当前已完成到：第三阶段（前端 Agent 模式展示与文档解析状态实时刷新）。
+
+### 第一阶段：稳定 RAG 主链路（已完成）
+
+- Spring `parse_task` 创建仍保留在上传事务内，Redis 入队移动到事务 `afterCommit` 后执行，避免 Worker 读到未提交任务。
+- Python Worker 保持线程池并发消费，`WORKER_CONCURRENCY` 与实际行为一致，并通过 DB `claim_task` 避免重复处理。
+- Worker 和 Go RAG 均增加 embedding 维度校验，错误信息包含 `expected` 与 `actual`。
+- Go RAG mock embedding 按配置维度生成向量。
+- Spring RAG fallback 改为 `knowflow.rag.fallback-enabled` 控制，dev 默认允许，prod 默认禁用。
+
+### 第二阶段：轻量级 Agent 工作流（已完成）
+
+- Go RAG Service 新增 `internal/agent`，沉淀 Router 与 Citation Guard 规则。
+- Agent 链路按 Router → Retriever → Citation Guard → Answer 执行，并返回 `intent / answer / sources / confidence / trace / latencyMs`。
+- Citation Guard 实现空 sources 禁止调用 LLM、低引用数 confidence 封顶、低 score 弱依据提示等防幻觉规则。
+- 保留 `/agent/ask`，并新增 `/rag/agent/ask` 与 `/rag/agent/ask/stream` 兼容接口。
+- Spring 与前端类型补齐 Agent `latencyMs` 透传。
+
+### 第三阶段：前端 Agent 模式展示与解析状态刷新（已完成）
+
+- Chat 页面保留普通 RAG / Agent 模式切换；Agent 模式下助手消息展示 Agent 标识、intent 与 confidence。
+- 新增 `AgentTracePanel`，展示 Agent trace、confidence、intent 和 latency。
+- SourcePanel 继续复用现有 sources 展示，右侧区域组合 sources 与 Agent trace。
+- 文档管理页上传成功后按文档 ID 每 2 秒调用状态接口轮询，DONE / FAILED 后停止。
+- FAILED 终态会拉取文档详情并展示 `errorMessage`；页面切换、翻页、删除和卸载都会清理轮询定时器。
+- 增加最大轮询次数，避免异常状态导致无限轮询。
+
+### 下一阶段：第四阶段（真实 Dashboard 与工程化）
+
+- 核对并完善 `/api/dashboard/stats` 的当前用户维度统计，确保知识库、文档、chunk、会话和失败任务不跨用户。
+- 前端 Dashboard 继续以统一统计接口为准，修正任何残留的前端本地聚合逻辑。
+- 补充 GitHub Actions CI：Backend `mvn test`、Frontend `npm ci && npm run build`、Go `go test ./...`、Worker `python -m app.main --check` 或最小配置检查。
+- 同步 README、API、Agent Design、Resume Description 文档。
+
 ## P0: 真实闭环与可信度
 
 - Spring `RagClient` 默认关闭 mock fallback，增加连接/读取超时配置；Go RAG 不可用时返回明确错误，不再落库 mock sources。

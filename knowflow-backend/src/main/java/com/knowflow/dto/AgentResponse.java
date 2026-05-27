@@ -16,4 +16,5 @@ public class AgentResponse {
     private List<RagSourceChunk> sources;
     private Double confidence;
     private List<AgentTraceStep> trace;
+    private Long latencyMs;
 }

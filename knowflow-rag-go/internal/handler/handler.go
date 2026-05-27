@@ -128,6 +128,7 @@ func (h *Handler) AskAgentStream(c *gin.Context) {
 				"intent":     meta.Intent,
 				"confidence": meta.Confidence,
 				"trace":      meta.Trace,
+				"latencyMs":  meta.LatencyMs,
 			})
 		case token, ok := <-tokenCh:
 			if !ok {

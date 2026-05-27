@@ -94,6 +94,6 @@ def _validate_embedding_dimensions(chunks: list[DocumentChunk]) -> None:
         actual = len(chunk.embedding or [])
         if actual != expected:
             raise RuntimeError(
-                f"embedding 维度不匹配: docId={chunk.document_id}, chunkIndex={chunk.chunk_index}, "
-                f"expected={expected}, got={actual}"
+                f"embedding dimension mismatch: expected={expected}, actual={actual}, "
+                f"docId={chunk.document_id}, chunkIndex={chunk.chunk_index}"
             )

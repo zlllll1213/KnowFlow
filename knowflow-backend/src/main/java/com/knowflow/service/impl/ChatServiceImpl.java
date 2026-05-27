@@ -229,6 +229,10 @@ public class ChatServiceImpl implements ChatService {
                         meta.trace = objectMapper.convertValue(trace,
                                 objectMapper.getTypeFactory().constructCollectionType(List.class, AgentTraceStep.class));
                     }
+                    Object latencyMs = metaEvent.get("latencyMs");
+                    if (latencyMs instanceof Number number) {
+                        meta.latencyMs = number.longValue();
+                    }
                     sendSse(emitter, "meta", metaEvent);
                 }
 
@@ -249,7 +253,7 @@ public class ChatServiceImpl implements ChatService {
                             answer.toString(), sourcesHolder.sources);
                     touchSession(session);
                     sendSse(emitter, "done", new AgentResponse(meta.intent, answer.toString(),
-                            sourcesHolder.sources, meta.confidence, meta.trace));
+                            sourcesHolder.sources, meta.confidence, meta.trace, meta.latencyMs));
                     emitter.complete();
                 }
             });
@@ -372,5 +376,6 @@ public class ChatServiceImpl implements ChatService {
         private String intent = "qa";
         private double confidence = 0.0;
         private List<AgentTraceStep> trace = new ArrayList<>();
+        private Long latencyMs = 0L;
     }
 }

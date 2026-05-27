@@ -40,7 +40,7 @@ public class RagClient {
             @Value("${knowflow.rag.base-url:http://localhost:8090}") String baseUrl,
             @Value("${knowflow.rag.connect-timeout-ms:3000}") int connectTimeoutMs,
             @Value("${knowflow.rag.read-timeout-ms:120000}") int readTimeoutMs,
-            @Value("${knowflow.rag.mock-fallback-enabled:false}") boolean mockFallbackEnabled,
+            @Value("${knowflow.rag.fallback-enabled:${knowflow.rag.mock-fallback-enabled:false}}") boolean mockFallbackEnabled,
             ObjectMapper objectMapper) {
         this.baseUrl = baseUrl;
         this.objectMapper = objectMapper;
@@ -103,7 +103,7 @@ public class RagClient {
             }
         }
 
-        throw new BusinessException(50301, "RAG 服务暂不可用，请稍后重试");
+        throw new BusinessException(50301, "Go RAG Service unavailable, fallback disabled.");
     }
 
     public void askStream(Long kbId, String question, int topK, StreamListener listener) {
@@ -153,7 +153,7 @@ public class RagClient {
                 listener.onDone();
                 return;
             }
-            listener.onError("RAG 服务暂不可用，请稍后重试");
+            listener.onError("Go RAG Service unavailable, fallback disabled.");
         }
     }
 

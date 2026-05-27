@@ -5,6 +5,12 @@
       <span v-else>{{ initial }}</span>
     </div>
     <div class="bubble-wrap">
+      <div v-if="msg.agentMode" class="agent-badge">
+        <el-icon><Operation /></el-icon>
+        <span>Agent</span>
+        <span v-if="msg.intent" class="agent-intent">{{ intentLabel }}</span>
+        <span v-if="typeof msg.confidence === 'number'" class="agent-confidence">{{ formatConfidence(msg.confidence) }}</span>
+      </div>
       <div class="bubble markdown-body" v-html="renderedContent"></div>
       <div class="time">{{ formatTime(msg.createdAt) }}</div>
     </div>
@@ -24,6 +30,16 @@ const props = defineProps<{ msg: ChatMessageVO }>()
 
 const authStore = useAuthStore()
 const initial = computed(() => (authStore.userInfo?.username?.[0] ?? 'U').toUpperCase())
+const intentLabel = computed(() => {
+  const labels: Record<string, string> = {
+    qa: '问答',
+    summarize: '总结',
+    study_plan: '学习计划',
+    code_analysis: '技术分析',
+    unknown: '未知',
+  }
+  return props.msg.intent ? (labels[props.msg.intent] ?? props.msg.intent) : ''
+})
 const renderer = new Renderer()
 
 renderer.code = ({ text, lang }) => {
@@ -59,6 +75,10 @@ function formatTime(d: string) {
   return new Date(d).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
 }
 
+function formatConfidence(value: number) {
+  return `${Math.round(Math.max(0, Math.min(1, value)) * 100)}%`
+}
+
 function escapeHtml(value: string) {
   return value
     .replace(/&/g, '&amp;')
@@ -81,6 +101,18 @@ function escapeHtml(value: string) {
 .user .avatar { background: var(--color-sidebar); color: #94a3b8; }
 .bubble-wrap { max-width: 72%; display: flex; flex-direction: column; gap: 4px; }
 .user .bubble-wrap { align-items: flex-end; }
+.agent-badge {
+  width: fit-content; display: inline-flex; align-items: center; gap: 5px;
+  padding: 3px 7px; border: 1px solid var(--color-border); border-radius: 6px;
+  background: var(--color-bg); color: var(--color-accent); font-size: 11px; font-weight: 700;
+}
+.agent-badge .el-icon { font-size: 13px; }
+.agent-intent, .agent-confidence {
+  color: var(--color-text-secondary); font-weight: 600;
+}
+.agent-confidence {
+  color: var(--color-success);
+}
 .bubble {
   padding: 10px 14px; border-radius: 12px; font-size: 14px; line-height: 1.6;
   word-break: break-word;
