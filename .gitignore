@@ -31,3 +31,6 @@ logs/
 # Node package manager caches
 .npm/
 .pnpm-store/
+
+# Optimization / review logs (local only)
+20??-??-??_????/

@@ -126,7 +126,7 @@ const messagesRef = ref<HTMLElement>()
 const currentKbName = computed(() => kbs.value.find(k => k.id === selectedKbId.value)?.name ?? '')
 
 onMounted(async () => {
-  kbs.value = (await getKbList().catch(() => ({ records: [] }))).records
+  kbs.value = (await getKbList().catch((e: unknown) => { console.error('加载知识库列表失败', e); return { records: [], total: 0 } })).records
   const kbId = route.query.kbId ? Number(route.query.kbId) : null
   if (kbId && kbs.value.find(k => k.id === kbId)) {
     selectedKbId.value = kbId
@@ -144,13 +144,13 @@ async function onKbChange() {
 
 async function loadSessions() {
   if (!selectedKbId.value) return
-  sessions.value = (await listSessions(selectedKbId.value).catch(() => ({ records: [] }))).records
+  sessions.value = (await listSessions(selectedKbId.value).catch((e: unknown) => { console.error('加载会话列表失败', e); return { records: [], total: 0 } })).records
   if (sessions.value.length > 0) await selectSession(sessions.value[0])
 }
 
 async function selectSession(s: ChatSessionVO) {
   currentSession.value = s
-  messages.value = (await getChatHistory(s.id).catch(() => ({ records: [] }))).records
+  messages.value = (await getChatHistory(s.id).catch((e: unknown) => { console.error('加载聊天历史失败', e); return { records: [], total: 0 } })).records
   resetEvidence()
   scrollToBottom()
 }

@@ -16,6 +16,7 @@ import {
   ArrowLeft,
   ChatDotRound,
   Check,
+  CircleCheck,
   Clock,
   Collection,
   Connection,
@@ -32,6 +33,7 @@ import {
   SwitchButton,
   Upload,
   UploadFilled,
+  Warning,
   WarningFilled,
 } from '@element-plus/icons-vue'
 import 'element-plus/dist/index.css'
@@ -64,6 +66,7 @@ const iconComponents = {
   ArrowLeft,
   ChatDotRound,
   Check,
+  CircleCheck,
   Clock,
   Collection,
   Connection,
@@ -80,6 +83,7 @@ const iconComponents = {
   SwitchButton,
   Upload,
   UploadFilled,
+  Warning,
   WarningFilled,
 }
 

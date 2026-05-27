@@ -17,7 +17,10 @@ function redirectToLogin() {
   removeToken()
   const current = router.currentRoute.value
   if (!['/login', '/register'].includes(current.path)) {
-    router.replace({ path: '/login', query: { redirect: current.fullPath } })
+    router.replace({ path: '/login', query: { redirect: current.fullPath } }).catch(() => {
+      // fallback if router is not ready
+      window.location.href = '/login'
+    })
   }
 }
 
@@ -31,8 +34,9 @@ request.interceptors.request.use((config) => {
 
 request.interceptors.response.use(
   (response) => {
-    const res: Result = response.data
+    const res = response.data as Result
     if (res.code === 0 || res.code === 200) {
+      // axios interceptor unwrapping — the caller's declared return type provides type safety
       return res.data as any
     }
     return Promise.reject(new Error(res.message || '请求失败'))

@@ -76,6 +76,30 @@ event: done
 data: {"type":"done"}
 ```
 
+### `POST /agent/ask`（Agent 模式）
+
+请求同 `/rag/ask`，返回增加 `intent`、`confidence`、`trace`：
+
+```json
+{
+  "intent": "qa",
+  "answer": "...",
+  "sources": [...],
+  "confidence": 0.85,
+  "trace": [
+    {"step": "router", "detail": "intent=qa"},
+    {"step": "retriever", "detail": "检索到 5 个相关片段"},
+    {"step": "citation_guard", "detail": "sources sufficient"},
+    {"step": "answer", "detail": "基于资料生成回答"}
+  ],
+  "latencyMs": 1240
+}
+```
+
+### `POST /agent/ask/stream`（Agent SSE 流式）
+
+SSE 事件：`meta` → `token`（逐 token）→ `sources` → `done`。meta 事件包含 `intent`、`confidence`、`trace`。
+
 ## 环境变量
 
 | 变量 | 说明 | 默认值 |
@@ -147,5 +171,5 @@ curl -X POST http://localhost:8090/rag/ask/stream \
 ## 后续规划
 
 - [ ] 检索缓存
-- [ ] 并发控制
-- [ ] 更细粒度的 provider 重试和熔断
+- [ ] LLM provider 熔断
+- [ ] 请求并发控制

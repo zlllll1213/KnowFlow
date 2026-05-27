@@ -115,10 +115,13 @@ VITE_API_BASE_URL=http://localhost:8081
 
 ---
 
-## 后续规划
+## 当前能力
 
-| 功能 | 说明 |
-|------|------|
-| 引用来源展示 | 将后端返回的 `DocumentChunk` 在右侧 SourcePanel 展示 |
-| 解析状态实时推送 | 通过轮询或 WebSocket 推送 `PARSING → EMBEDDING → DONE` 状态变化 |
-| 全文检索 | 跨知识库关键词搜索 |
+| 功能 | 状态 | 说明 |
+|------|:----:|------|
+| 引用来源展示 | ✅ | 后端返回的 `sources` 在 SourcePanel 展示，含 documentId/chunkIndex/score |
+| 解析状态实时轮询 | ✅ | 上传后自动 3s 轮询 `PARSING → EMBEDDING → DONE`，完成后停止 |
+| Agent 模式 | ✅ | Chat 页支持 Agent/RAG 切换，展示 intent/confidence/trace |
+| Dashboard 真实统计 | ✅ | 后端 `/api/dashboard/stats` 聚合数据 |
+| Markdown 安全渲染 | ✅ | `marked` + `DOMPurify` + `highlight.js` |
+| 上传进度条 | ✅ | `onUploadProgress` 实时进度 |

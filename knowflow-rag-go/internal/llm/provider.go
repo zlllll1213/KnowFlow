@@ -29,7 +29,7 @@ type Message struct {
 func NewProvider(cfg *config.Config) Provider {
 	switch strings.ToLower(cfg.LLMProvider) {
 	case "", "mock":
-		return &MockProvider{}
+		return &MockProvider{label: "Mock"}
 	case "openai", "deepseek":
 		return &OpenAICompatibleProvider{
 			apiKey:  cfg.LLMAPIKey,
@@ -45,27 +45,20 @@ func NewProvider(cfg *config.Config) Provider {
 		}
 	default:
 		log.Printf("未知 LLM provider: %s, 回退到 mock", cfg.LLMProvider)
-		return &MockProvider{}
+		return &MockProvider{label: "Mock"}
 	}
 }
 
 type MockProvider struct {
-	label string
+	label string // set once at construction; safe for concurrent reads
 }
 
 func (m *MockProvider) Chat(ctx context.Context, messages []Message) (string, error) {
-	if m.label == "" {
-		m.label = "Mock"
-	}
 	question := lastUserMessage(messages)
 	return fmt.Sprintf("[%s 模式] 已收到您的问题：「%s」。\n根据知识库中的参考资料，我找到了一些相关内容。请查看右侧引用来源了解详情。\n\n提示：当前为 mock 回答模式。配置 RAG_LLM_PROVIDER 和 API key 后即可获得真实 AI 回答。", m.label, question), nil
 }
 
 func (m *MockProvider) ChatStream(ctx context.Context, messages []Message, out chan<- string) error {
-	if m.label == "" {
-		m.label = "Mock"
-	}
-
 	chunks := []string{
 		fmt.Sprintf("[%s 流式模式] ", m.label),
 		"正在分析您的问题……\n\n",

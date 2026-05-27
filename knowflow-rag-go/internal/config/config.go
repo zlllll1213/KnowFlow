@@ -34,6 +34,7 @@ func Load() *Config {
 		LLMBaseURL:        getEnv("RAG_LLM_BASE_URL", ""),
 		LLMModel:          getEnv("RAG_LLM_MODEL", ""),
 		RequestTimeout:    time.Duration(getEnvInt("RAG_REQUEST_TIMEOUT_SECONDS", 60)) * time.Second,
+		// embedding provider 默认跟随 LLM provider；单独设置 RAG_EMBEDDING_PROVIDER 可覆盖
 		EmbeddingProvider: getEnv("RAG_EMBEDDING_PROVIDER", getEnv("RAG_LLM_PROVIDER", "mock")),
 		EmbeddingAPIKey:   getEnv("RAG_EMBEDDING_API_KEY", getEnv("RAG_LLM_API_KEY", "")),
 		EmbeddingBaseURL:  getEnv("RAG_EMBEDDING_BASE_URL", ""),

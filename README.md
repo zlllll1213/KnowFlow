@@ -246,6 +246,40 @@ Demo 数据：
 
 ---
 
+## Agent 模式
+
+Chat 页面支持普通 RAG 与 Agent 两种模式：
+
+- 普通 RAG：调用 `/api/chat/ask/stream`，返回流式 answer 与 sources。
+- Agent 模式：调用 `/api/agent/ask/stream`，返回 answer、sources、intent、confidence、trace 和 latencyMs。
+- Citation Guard 会在 sources 为空时直接返回“知识库中未找到足够依据，无法回答该问题。”，不会调用 LLM 编造答案。
+- sources 较少或最高 score 较低时会降低 confidence，并在弱依据回答前提示“当前知识库依据较弱，仅供参考。”
+
+---
+
+## Demo 流程
+
+1. 注册并登录 KnowFlow。
+2. 创建知识库，例如“项目资料库”。
+3. 上传 TXT / MD / PDF / DOCX 文档。
+4. 在文档管理页观察状态从 `UPLOADED → PARSING → EMBEDDING → DONE`。
+5. 进入 Chat，先用普通 RAG 提问并查看 sources。
+6. 切换 Agent 模式，再提问“帮我总结这份文档”或“给我一个学习计划”，查看 intent、confidence 和 trace。
+7. 打开 Dashboard，确认知识库、文档、chunk、问答次数、最近文档、最近会话和失败任务均来自后端统计接口。
+
+---
+
+## CI
+
+已新增 GitHub Actions 工作流 [`.github/workflows/ci.yml`](.github/workflows/ci.yml)，在 push 到 `main` 或 PR 时运行：
+
+- Backend: `mvn test`
+- Frontend: `npm ci && npm run build`
+- Go RAG: `go test ./...`
+- Python Worker: `python -m compileall app` 和 `python -m app.main --check`
+
+---
+
 ## 后续规划
 
 | 功能 | 状态 |

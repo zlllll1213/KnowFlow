@@ -119,7 +119,9 @@ async function loadData() {
     docs.value = docPage.records
     total.value = docPage.total
     syncPolling()
-  } catch {} finally { loading.value = false }
+  } catch (e: unknown) {
+    console.error('加载知识库详情失败', e)
+  } finally { loading.value = false }
 }
 
 async function loadDocs() {
@@ -129,7 +131,9 @@ async function loadDocs() {
     docs.value = result.records
     total.value = result.total
     syncPolling()
-  } catch {} finally { loading.value = false }
+  } catch (e: unknown) {
+    console.error('加载文档列表失败', e)
+  } finally { loading.value = false }
 }
 
 onMounted(loadData)

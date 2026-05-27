@@ -37,11 +37,24 @@
       <div class="card panel">
         <div class="panel-title"><el-icon><Warning /></el-icon> 最近失败任务</div>
         <div v-if="recentFailures.length === 0" class="empty-tip">暂无失败任务</div>
-        <div v-for="(item, idx) in recentFailures" :key="idx" class="list-item">
-          <div class="item-icon chat"><el-icon><Warning /></el-icon></div>
+        <div v-for="item in recentFailures" :key="item.taskId" class="list-item">
+          <div class="item-icon failed"><el-icon><Warning /></el-icon></div>
           <div class="item-body">
-            <div class="item-name">{{ item }}</div>
-            <div class="item-meta">Worker 解析失败</div>
+            <div class="item-name">{{ item.fileName }}</div>
+            <div class="item-meta">{{ item.errorMessage }}</div>
+          </div>
+        </div>
+        <router-link to="/documents" class="panel-more">查看文档 →</router-link>
+      </div>
+
+      <div class="card panel">
+        <div class="panel-title"><el-icon><ChatDotRound /></el-icon> 最近会话</div>
+        <div v-if="recentSessions.length === 0" class="empty-tip">暂无会话</div>
+        <div v-for="s in recentSessions" :key="s.id" class="list-item">
+          <div class="item-icon chat"><el-icon><ChatDotRound /></el-icon></div>
+          <div class="item-body">
+            <div class="item-name">{{ s.title }}</div>
+            <div class="item-meta">更新于 {{ formatDate(s.updatedAt) }}</div>
           </div>
         </div>
         <router-link to="/chat" class="panel-more">进入问答 →</router-link>
@@ -55,36 +68,45 @@ import { ref, computed, onMounted } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import { getDashboardStats } from '@/api/dashboard'
 import type { DocumentVO } from '@/types/document'
+import type { ChatSessionVO } from '@/types/chat'
+import type { RecentFailedTaskVO } from '@/types/dashboard'
 
 const authStore = useAuthStore()
 
 const kbCount = ref(0)
 const docCount = ref(0)
 const doneCount = ref(0)
+const failedCount = ref(0)
 const chunkCount = ref(0)
-const questionCount = ref(0)
+const chatCount = ref(0)
 const recentDocs = ref<DocumentVO[]>([])
-const recentFailures = ref<string[]>([])
+const recentSessions = ref<ChatSessionVO[]>([])
+const recentFailures = ref<RecentFailedTaskVO[]>([])
 
 const stats = computed(() => [
   { label: '知识库', value: kbCount.value, icon: 'Collection', bg: '#eef2ff', color: '#4f46e5' },
   { label: '文档总数', value: docCount.value, icon: 'Document', bg: '#fef9c3', color: '#854d0e' },
   { label: '已完成解析', value: doneCount.value, icon: 'CircleCheck', bg: '#d1fae5', color: '#065f46' },
+  { label: '解析失败', value: failedCount.value, icon: 'Warning', bg: '#fee2e2', color: '#991b1b' },
   { label: '切片总数', value: chunkCount.value, icon: 'Files', bg: '#e0f2fe', color: '#075985' },
-  { label: '问答次数', value: questionCount.value, icon: 'ChatDotRound', bg: '#ffe4e6', color: '#9f1239' },
+  { label: '问答次数', value: chatCount.value, icon: 'ChatDotRound', bg: '#ffe4e6', color: '#9f1239' },
 ])
 
 onMounted(async () => {
   try {
     const stats = await getDashboardStats()
-    kbCount.value = stats.knowledgeBaseCount
-    docCount.value = stats.documentCount
-    doneCount.value = stats.parsedDocumentCount
+    kbCount.value = stats.kbCount
+    docCount.value = stats.docCount
+    doneCount.value = stats.doneDocCount
+    failedCount.value = stats.failedDocCount
     chunkCount.value = stats.chunkCount
-    questionCount.value = stats.questionCount
-    recentDocs.value = stats.recentDocuments ?? []
+    chatCount.value = stats.chatCount
+    recentDocs.value = stats.recentDocs ?? []
+    recentSessions.value = stats.recentSessions ?? []
     recentFailures.value = stats.recentFailedTasks ?? []
-  } catch {}
+  } catch (e: unknown) {
+    console.error('加载工作台数据失败', e)
+  }
 })
 
 const statusLabel: Record<string, string> = {
@@ -112,7 +134,7 @@ function formatDate(d: string) {
 .stat-icon { width: 48px; height: 48px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 22px; flex-shrink: 0; }
 .stat-value { font-family: var(--font-heading); font-size: 28px; font-weight: 700; color: var(--color-text-primary); line-height: 1; }
 .stat-label { font-size: 13px; color: var(--color-text-secondary); margin-top: 4px; }
-.dashboard-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+.dashboard-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; }
 .panel { padding: 20px; }
 .panel-title { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600; color: var(--color-text-primary); margin-bottom: 16px; }
 .empty-tip { font-size: 13px; color: var(--color-text-muted); padding: 20px 0; text-align: center; }
@@ -121,6 +143,7 @@ function formatDate(d: string) {
 .item-icon { width: 32px; height: 32px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 15px; flex-shrink: 0; }
 .item-icon.doc { background: #fef9c3; color: #854d0e; }
 .item-icon.chat { background: #eef2ff; color: #4f46e5; }
+.item-icon.failed { background: #fee2e2; color: #991b1b; }
 .item-body { flex: 1; min-width: 0; }
 .item-name { font-size: 13px; font-weight: 500; color: var(--color-text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .item-meta { font-size: 12px; color: var(--color-text-muted); margin-top: 2px; }

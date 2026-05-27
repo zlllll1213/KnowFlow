@@ -224,12 +224,17 @@ curl -N -X POST http://localhost:8081/api/chat/ask/stream \
 
 ---
 
-## 后续规划
+## 当前能力
 
-| 功能 | 说明 |
-|------|------|
-| Python Worker | 消费 Redis 队列 `knowflow:parse:queue`，完成文档解析与向量化 |
-| Go RAG 服务 | 后端通过 `RagClient` 调用 Go 端 RAG 检索与生成 |
-| pgvector 检索 | 启用 PostgreSQL pgvector 扩展，将 `document_chunk.embedding` 改为 `VECTOR` 类型 |
-| SSE 流式输出 | 聊天接口支持 Server-Sent Events 逐字流式返回 |
-| MinIO 集成 | 将本地文件存储切换至 MinIO 对象存储 |
+| 功能 | 状态 | 说明 |
+|------|:----:|------|
+| Python Worker | ✅ | 消费 Redis 队列，完成文档解析与向量化 |
+| Go RAG 服务 | ✅ | 后端通过 `RagClient` 调用 Go 端 RAG 检索与生成 |
+| pgvector 检索 | ✅ | PostgreSQL pgvector 扩展，`document_chunk.embedding` 为 `VECTOR` 类型 |
+| SSE 流式输出 | ✅ | 聊天接口支持 Server-Sent Events 逐字流式返回 |
+| MinIO 集成 | ✅ | 支持 `local` / `minio` 存储切换 |
+| Agent 工作流 | ✅ | Intent Router / Retriever / Answer / Citation Guard |
+| 知识库 / 文档 / 会话 / 消息 分页 | ✅ | 所有列表接口返回 `PageResult<T>` |
+| 健康检查（DB/Redis/RAG/Storage） | ✅ | `/api/health` 验证全部依赖 |
+| 文件上传校验 | ✅ | 扩展名白名单 + MIME 校验 + 空文件拒绝 |
+| Dashboard 统计 | ✅ | `/api/dashboard/stats` 真实聚合 |

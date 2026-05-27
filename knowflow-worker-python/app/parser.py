@@ -70,6 +70,7 @@ def _parse_markdown(file_path: str) -> str:
         return stripper.text.getvalue()
     except ImportError:
         # 无 markdown 库时回退为简单处理：移除常见 MD 标记
+        log.warning("markdown 库未安装，回退为纯文本解析（Markdown 格式可能丢失）")
         return _parse_txt(file_path)
 
 

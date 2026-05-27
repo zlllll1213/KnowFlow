@@ -7,6 +7,13 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
+# 加载 .env 文件（如果存在）
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
 
 @dataclass
 class Config:

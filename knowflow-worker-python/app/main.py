@@ -20,10 +20,8 @@ import os
 import sys
 import tempfile
 import time
-import traceback
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
-
 # 确保 app 包可导入
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -37,6 +35,37 @@ logging.basicConfig(
 log = logging.getLogger("worker")
 
 
+def _call_with_retry(fn, max_attempts: int = 3, step_name: str = ""):
+    """对瞬态故障指数退避重试。"""
+    base_delay = 2.0
+    for attempt in range(1, max_attempts + 1):
+        try:
+            return fn()
+        except Exception as e:
+            if attempt >= max_attempts:
+                raise
+            if not _is_transient_error(e):
+                raise
+            delay = base_delay * (2 ** (attempt - 1))
+            log.warning("%s 瞬态故障，%d 秒后重试 (attempt=%d/%d): %s",
+                        step_name, delay, attempt, max_attempts, e)
+            time.sleep(delay)
+
+
+def _is_transient_error(exc: Exception) -> bool:
+    """判断异常是否为瞬态故障。"""
+    try:
+        import httpx
+        if isinstance(exc, httpx.HTTPStatusError):
+            return exc.response.status_code in {429, 500, 502, 503, 504}
+        if isinstance(exc, (httpx.ConnectError, httpx.TimeoutException, httpx.RemoteProtocolError)):
+            return True
+    except ImportError:
+        pass
+    msg = str(exc).lower()
+    return any(kw in msg for kw in ("connection reset", "connection refused", "timeout", "temporarily unavailable"))
+
+
 def process_task(task_id: int):
     """处理单个解析任务。"""
     from app.embedding import generate_embeddings
@@ -46,6 +75,7 @@ def process_task(task_id: int):
         fetch_document,
         fetch_task,
         get_connection,
+        put_connection,
         insert_chunks,
         update_document_status,
         update_task_status,
@@ -98,8 +128,8 @@ def process_task(task_id: int):
         update_task_status(conn, task.id, TaskStatus.EMBEDDING)
         update_document_status(conn, doc.id, DocStatus.EMBEDDING)
 
-        # 8. 生成 embedding
-        generate_embeddings(chunks)
+        # 8. 生成 embedding（瞬态故障自动重试）
+        _call_with_retry(lambda: generate_embeddings(chunks), max_attempts=3, step_name="embedding")
 
         # 9. 写入 document_chunk
         insert_chunks(conn, chunks)
@@ -112,8 +142,7 @@ def process_task(task_id: int):
                  task.id, doc.id, len(chunks))
 
     except Exception as e:
-        log.error("任务处理失败: taskId=%d, error=%s", task_id, e)
-        traceback.print_exc()
+        log.exception("任务处理失败: taskId=%d, error=%s", task_id, e)
         try:
             error_message = str(e)
             update_task_status(conn, task_id, TaskStatus.FAILED, error_message)
@@ -124,7 +153,7 @@ def process_task(task_id: int):
         except Exception:
             log.error("更新失败状态时出错", exc_info=True)
     finally:
-        conn.close()
+        put_connection(conn)
 
 
 def _download_file(file_path: str, local_path: str):
@@ -150,7 +179,7 @@ def recover_tasks_on_start(redis_client):
         return
 
     from app.queue import push_task
-    from app.repository import get_connection, list_recoverable_tasks
+    from app.repository import get_connection, put_connection, list_recoverable_tasks
 
     conn = get_connection()
     try:
@@ -160,7 +189,7 @@ def recover_tasks_on_start(redis_client):
             config.task_recovery_limit,
         )
     finally:
-        conn.close()
+        put_connection(conn)
 
     for task_id in task_ids:
         push_task(redis_client, task_id)
@@ -223,7 +252,10 @@ def main():
              config.storage_type, config.embedding_provider, config.concurrency)
 
     from app.queue import block_pop_task, create_redis_client
+    from app.repository import init_pool, close_pool, init_pgvector_check
 
+    init_pool(minconn=1, maxconn=max(4, config.concurrency + 1))
+    init_pgvector_check()
     redis_client = create_redis_client()
     recover_tasks_on_start(redis_client)
 
@@ -237,11 +269,14 @@ def main():
             except KeyboardInterrupt:
                 log.info("Worker 收到停止信号，退出")
                 break
+            except GeneratorExit:
+                break
             except Exception as e:
                 log.error("Worker 主循环异常: %s", e, exc_info=True)
                 time.sleep(5)
 
     redis_client.close()
+    close_pool()
 
 
 if __name__ == "__main__":

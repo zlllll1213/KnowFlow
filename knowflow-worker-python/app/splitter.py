@@ -37,7 +37,7 @@ def split_text(text: str, document_id: int, kb_id: int, start_index: int = 0) ->
         chunk_text = text[pos:end]
         if end < text_len:
             # 向后找最近的句号、换行、空格
-            for sep in ["\n\n", "\n", "。", ". ", " ", ""]:
+            for sep in ["\n\n", "\n", "。", ". ", " "]:
                 last = chunk_text.rfind(sep)
                 if last > char_limit // 2:
                     end = pos + last + len(sep)

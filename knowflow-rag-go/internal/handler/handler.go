@@ -8,6 +8,7 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"github.com/knowflow/rag-go/internal/config"
 	"github.com/knowflow/rag-go/internal/service"
 	"github.com/knowflow/rag-go/internal/types"
@@ -33,7 +34,7 @@ func (h *Handler) Health(c *gin.Context) {
 func (h *Handler) Ask(c *gin.Context) {
 	var req types.RagRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "参数错误: " + err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "参数错误"})
 		return
 	}
 
@@ -42,7 +43,7 @@ func (h *Handler) Ask(c *gin.Context) {
 	resp, err := h.rag.Ask(ctx, req)
 	if err != nil {
 		log.Printf("RAG 问答失败: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "问答失败: " + err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "问答失败，请稍后重试"})
 		return
 	}
 	c.JSON(http.StatusOK, resp)
@@ -51,7 +52,7 @@ func (h *Handler) Ask(c *gin.Context) {
 func (h *Handler) AskStream(c *gin.Context) {
 	var req types.RagRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "参数错误: " + err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "参数错误"})
 		return
 	}
 
@@ -59,7 +60,10 @@ func (h *Handler) AskStream(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), h.cfg.RequestTimeout)
 	defer cancel()
 	tokenCh, sourceCh, errCh := h.rag.AskStream(ctx, req)
-	flusher, _ := c.Writer.(http.Flusher)
+	flusher, ok := c.Writer.(http.Flusher)
+	if !ok {
+		log.Println("WARNING: ResponseWriter 不支持 http.Flusher，SSE 推送可能延迟")
+	}
 
 	for {
 		select {
@@ -88,7 +92,7 @@ func (h *Handler) AskStream(c *gin.Context) {
 func (h *Handler) AskAgent(c *gin.Context) {
 	var req types.RagRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "参数错误: " + err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "参数错误"})
 		return
 	}
 
@@ -97,7 +101,7 @@ func (h *Handler) AskAgent(c *gin.Context) {
 	resp, err := h.rag.AskAgent(ctx, req)
 	if err != nil {
 		log.Printf("Agent 问答失败: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Agent 问答失败: " + err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Agent 问答失败，请稍后重试"})
 		return
 	}
 	c.JSON(http.StatusOK, resp)
@@ -106,7 +110,7 @@ func (h *Handler) AskAgent(c *gin.Context) {
 func (h *Handler) AskAgentStream(c *gin.Context) {
 	var req types.RagRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "参数错误: " + err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "参数错误"})
 		return
 	}
 
@@ -114,7 +118,10 @@ func (h *Handler) AskAgentStream(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), h.cfg.RequestTimeout)
 	defer cancel()
 	tokenCh, sourceCh, metaCh, errCh := h.rag.AskAgentStream(ctx, req)
-	flusher, _ := c.Writer.(http.Flusher)
+	flusher, ok := c.Writer.(http.Flusher)
+	if !ok {
+		log.Println("WARNING: ResponseWriter 不支持 http.Flusher，SSE 推送可能延迟")
+	}
 
 	for {
 		select {
@@ -149,6 +156,19 @@ func (h *Handler) AskAgentStream(c *gin.Context) {
 			writeSSE(c, flusher, "error", gin.H{"type": "error", "message": err.Error()})
 			return
 		}
+	}
+}
+
+// RequestID 中间件：为每个请求注入唯一 ID 并写入响应头。
+func RequestID() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		requestID := c.GetHeader("X-Request-ID")
+		if requestID == "" {
+			requestID = uuid.NewString()
+		}
+		c.Set("requestId", requestID)
+		c.Header("X-Request-ID", requestID)
+		c.Next()
 	}
 }
 

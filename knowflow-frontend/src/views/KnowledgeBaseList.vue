@@ -87,7 +87,9 @@ async function loadList() {
     const result = await getKbList(page.value, pageSize.value)
     kbs.value = result.records
     total.value = result.total
-  } catch {} finally { loading.value = false }
+  } catch (e: unknown) {
+    console.error('加载知识库列表失败', e)
+  } finally { loading.value = false }
 }
 
 onMounted(loadList)

@@ -36,9 +36,12 @@ func (s *RAGService) Ask(ctx context.Context, req types.RagRequest) (*types.RagR
 	topK := s.normalizeTopK(req.TopK)
 
 	embeddingStart := time.Now()
+	embeddingUsed := true
 	queryEmbedding, err := s.embedder.Embed(ctx, req.Question)
 	if err != nil {
-		log.Printf("query embedding 生成失败，回退关键词检索: %v", err)
+		log.Printf("embedding 生成失败，回退关键词检索: kbId=%d, error=%v", req.KbId, err)
+		embeddingUsed = false
+		queryEmbedding = nil // 确保不使用零值向量，keyword-only retrieve
 	} else if err := s.validateEmbeddingDim(queryEmbedding); err != nil {
 		return nil, err
 	}
@@ -70,8 +73,8 @@ func (s *RAGService) Ask(ctx context.Context, req types.RagRequest) (*types.RagR
 	llmMs := time.Since(llmStart).Milliseconds()
 
 	elapsed := time.Since(start).Milliseconds()
-	log.Printf("问答完成: kbId=%d, topK=%d, sources=%d, embedding=%dms, retrieve=%dms, llm=%dms, total=%dms",
-		req.KbId, topK, len(sources), embeddingMs, retrieveMs, llmMs, elapsed)
+	log.Printf("问答完成: kbId=%d, topK=%d, sources=%d, embedding=%dms, retrieve=%dms, llm=%dms, total=%dms, embeddingUsed=%v",
+		req.KbId, topK, len(sources), embeddingMs, retrieveMs, llmMs, elapsed, embeddingUsed)
 	s.logCall(ctx, "rag", "qa", req, topK, len(sources), retrieveMs, llmMs, elapsed, confidence, nil)
 
 	return &types.RagResponse{
@@ -96,7 +99,8 @@ func (s *RAGService) AskStream(ctx context.Context, req types.RagRequest) (<-cha
 		start := time.Now()
 		queryEmbedding, err := s.embedder.Embed(ctx, req.Question)
 		if err != nil {
-			log.Printf("query embedding 生成失败，回退关键词检索: %v", err)
+			log.Printf("embedding 生成失败，回退关键词检索: kbId=%d, error=%v", req.KbId, err)
+			queryEmbedding = nil
 		} else if err := s.validateEmbeddingDim(queryEmbedding); err != nil {
 			errCh <- err
 			return
@@ -147,7 +151,8 @@ func (s *RAGService) AskAgent(ctx context.Context, req types.RagRequest) (*types
 
 	queryEmbedding, err := s.embedder.Embed(ctx, query)
 	if err != nil {
-		log.Printf("agent query embedding 生成失败，回退关键词检索: %v", err)
+		log.Printf("agent embedding 生成失败，回退关键词检索: kbId=%d, intent=%s, error=%v", req.KbId, intent, err)
+		queryEmbedding = nil
 	} else if err := s.validateEmbeddingDim(queryEmbedding); err != nil {
 		return nil, err
 	}
@@ -203,14 +208,87 @@ func (s *RAGService) AskAgentStream(ctx context.Context, req types.RagRequest) (
 		defer close(sourceCh)
 		defer close(metaCh)
 		defer close(errCh)
-		resp, err := s.AskAgent(ctx, req)
+
+		start := time.Now()
+		topK := s.normalizeTopK(req.TopK)
+		intent, detail := agent.RouteIntent(req.Question)
+		trace := []types.AgentTraceStep{{Step: "router", Detail: detail}}
+
+		query := agent.BuildRetrievalQuery(req.Question, intent)
+
+		queryEmbedding, err := s.embedder.Embed(ctx, query)
 		if err != nil {
+			log.Printf("agent embedding 生成失败，回退关键词检索: kbId=%d, intent=%s, error=%v", req.KbId, intent, err)
+			queryEmbedding = nil
+		} else if err := s.validateEmbeddingDim(queryEmbedding); err != nil {
 			errCh <- err
 			return
 		}
-		metaCh <- *resp
-		tokenCh <- resp.Answer
-		sourceCh <- resp.Sources
+
+		retrieveStart := time.Now()
+		sources, err := s.retriever.Retrieve(ctx, req.KbId, query, queryEmbedding, topK)
+		if err != nil {
+			errCh <- fmt.Errorf("Agent 检索失败: %w", err)
+			return
+		}
+		retrieveMs := time.Since(retrieveStart).Milliseconds()
+		trace = append(trace, types.AgentTraceStep{Step: "retriever", Detail: fmt.Sprintf("检索到 %d 个相关片段", len(sources))})
+
+		guard := agent.EvaluateCitations(sources)
+		trace = append(trace, types.AgentTraceStep{Step: "citation_guard", Detail: guard.Detail})
+
+		if !guard.AllowAnswer || intent == agent.IntentUnknown {
+			var answer string
+			confidence := guard.Confidence
+			if !guard.AllowAnswer {
+				answer = agent.InsufficientAnswer
+				trace = append(trace, types.AgentTraceStep{Step: "answer", Detail: "资料不足，未调用 LLM"})
+			} else {
+				answer = agent.UnknownAnswer
+				confidence = minFloat(guard.Confidence, 0.3)
+				trace = append(trace, types.AgentTraceStep{Step: "answer", Detail: "意图 unknown，未调用 LLM"})
+			}
+			elapsed := time.Since(start).Milliseconds()
+			s.logCall(ctx, "agent", intent, req, topK, len(sources), retrieveMs, 0, elapsed, confidence, trace)
+			metaCh <- types.AgentResponse{Intent: intent, Answer: answer, Sources: sources, Confidence: confidence, Trace: trace, LatencyMs: elapsed}
+			tokenCh <- answer
+			sourceCh <- sources
+			return
+		}
+
+		// Send meta before streaming tokens
+		metaCh <- types.AgentResponse{
+			Intent:     intent,
+			Sources:    sources,
+			Confidence: guard.Confidence,
+			Trace:      trace,
+		}
+
+		// Stream LLM tokens
+		messages := prompt.BuildMessagesForIntent(req.Question, sources, intent)
+		llmStart := time.Now()
+		if guard.Prefix != "" {
+			tokenCh <- guard.Prefix + "\n\n"
+		}
+		if err := s.llm.ChatStream(ctx, messages, tokenCh); err != nil {
+			errCh <- fmt.Errorf("Agent LLM 流式调用失败: %w", err)
+			return
+		}
+		llmMs := time.Since(llmStart).Milliseconds()
+		trace = append(trace, types.AgentTraceStep{Step: "answer", Detail: fmt.Sprintf("基于资料生成回答，intent=%s llmMs=%d", intent, llmMs)})
+		elapsed := time.Since(start).Milliseconds()
+
+		// Update meta with final timing
+		metaCh <- types.AgentResponse{
+			Intent:     intent,
+			Sources:    sources,
+			Confidence: guard.Confidence,
+			Trace:      trace,
+			LatencyMs:  elapsed,
+		}
+
+		s.logCall(ctx, "agent", intent, req, topK, len(sources), retrieveMs, llmMs, elapsed, guard.Confidence, trace)
+		sourceCh <- sources
 	}()
 	return tokenCh, sourceCh, metaCh, errCh
 }
@@ -223,6 +301,7 @@ func (s *RAGService) normalizeTopK(topK int) int {
 		topK = 5
 	}
 	if s.maxTopK > 0 && topK > s.maxTopK {
+		log.Printf("topK=%d 超过上限，截断为 %d", topK, s.maxTopK)
 		return s.maxTopK
 	}
 	return topK

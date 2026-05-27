@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -154,10 +155,19 @@ func vectorLiteral(values []float32) string {
 		if i > 0 {
 			b.WriteByte(',')
 		}
-		b.WriteString(fmt.Sprintf("%g", v))
+		// 防止 NaN / Inf 注入 pgvector 导致查询崩溃
+		if isBadFloat(v) {
+			b.WriteString("0")
+		} else {
+			b.WriteString(fmt.Sprintf("%g", v))
+		}
 	}
 	b.WriteByte(']')
 	return b.String()
+}
+
+func isBadFloat(v float32) bool {
+	return v != v || v > 1e20 || v < -1e20 // NaN check + overflow guard
 }
 
 var keywordPattern = regexp.MustCompile(`[A-Za-z0-9][A-Za-z0-9_-]*|[\p{Han}]+`)
@@ -206,6 +216,32 @@ func isHanRun(s string) bool {
 		}
 	}
 	return s != ""
+}
+
+// ValidateEmbeddingDim 查询数据库 document_chunk.embedding 列维度，校验配置一致。
+func (r *PgRetriever) ValidateEmbeddingDim(expected int) error {
+	var formattedType string
+	err := r.db.QueryRow(`
+		SELECT format_type(atttypid, atttypmod)
+		FROM pg_attribute
+		WHERE attrelid = 'document_chunk'::regclass
+		  AND attname = 'embedding'
+	`).Scan(&formattedType)
+	if err != nil {
+		return fmt.Errorf("无法查询数据库 vector 维度: %w", err)
+	}
+	if !strings.HasPrefix(formattedType, "vector(") || !strings.HasSuffix(formattedType, ")") {
+		return nil
+	}
+	rawDim := strings.TrimSuffix(strings.TrimPrefix(formattedType, "vector("), ")")
+	dbDim, err := strconv.Atoi(rawDim)
+	if err != nil {
+		return fmt.Errorf("无法解析数据库 vector 维度: %s", formattedType)
+	}
+	if dbDim != expected {
+		return fmt.Errorf("embedding 维度不匹配: 配置=%d, 数据库=%d", expected, dbDim)
+	}
+	return nil
 }
 
 func (r *PgRetriever) Close() {

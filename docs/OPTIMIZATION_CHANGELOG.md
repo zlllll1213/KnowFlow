@@ -2,39 +2,47 @@
 
 ## Staged Execution Status · 2026-05-27
 
-当前已完成到：第三阶段（前端 Agent 模式展示与文档解析状态实时刷新）。
+**全部四个阶段已完成。** 当前最新收尾记录：第四阶段已补齐真实 Dashboard 统计、GitHub Actions CI 和主要文档同步。
 
-### 第一阶段：稳定 RAG 主链路（已完成）
+### 第一阶段：稳定 RAG 主链路 ✅
 
-- Spring `parse_task` 创建仍保留在上传事务内，Redis 入队移动到事务 `afterCommit` 后执行，避免 Worker 读到未提交任务。
-- Python Worker 保持线程池并发消费，`WORKER_CONCURRENCY` 与实际行为一致，并通过 DB `claim_task` 避免重复处理。
-- Worker 和 Go RAG 均增加 embedding 维度校验，错误信息包含 `expected` 与 `actual`。
-- Go RAG mock embedding 按配置维度生成向量。
-- Spring RAG fallback 改为 `knowflow.rag.fallback-enabled` 控制，dev 默认允许，prod 默认禁用。
+- Spring `parse_task` 创建仍保留在上传事务内，Redis 入队移动到事务 `afterCommit` 后执行。
+- Python Worker 保持线程池并发消费，`WORKER_CONCURRENCY` 与实际行为一致。
+- Worker 和 Go RAG 均增加 embedding 维度校验。
+- Go RAG mock embedding 按输入文本生成确定性变体向量。
+- Spring RAG fallback 默认关闭（`knowflow.rag.fallback-enabled=false`）。
+- 后端 `RestTemplate` 增加 connect 3s / read 120s 超时。
+- 后端 `sendSse` 改为返回 boolean + try-catch。
 
-### 第二阶段：轻量级 Agent 工作流（已完成）
+### 第二阶段：轻量级 Agent 工作流 ✅
 
-- Go RAG Service 新增 `internal/agent`，沉淀 Router 与 Citation Guard 规则。
-- Agent 链路按 Router → Retriever → Citation Guard → Answer 执行，并返回 `intent / answer / sources / confidence / trace / latencyMs`。
-- Citation Guard 实现空 sources 禁止调用 LLM、低引用数 confidence 封顶、低 score 弱依据提示等防幻觉规则。
-- 保留 `/agent/ask`，并新增 `/rag/agent/ask` 与 `/rag/agent/ask/stream` 兼容接口。
-- Spring 与前端类型补齐 Agent `latencyMs` 透传。
+- Go RAG Service 内置 Intent Router / Citation Guard。
+- Agent 链路：Router → Retriever → Citation Guard → Answer。
+- `/agent/ask` 和 `/agent/ask/stream` 接口。
+- AskAgentStream 改为真正流式（ChatStream 逐 token）。
+- 前端 AgentTracePanel 展示 trace/confidence/intent。
 
-### 第三阶段：前端 Agent 模式展示与解析状态刷新（已完成）
+### 第三阶段：前端 Agent 展示与解析刷新 ✅
 
-- Chat 页面保留普通 RAG / Agent 模式切换；Agent 模式下助手消息展示 Agent 标识、intent 与 confidence。
-- 新增 `AgentTracePanel`，展示 Agent trace、confidence、intent 和 latency。
-- SourcePanel 继续复用现有 sources 展示，右侧区域组合 sources 与 Agent trace。
-- 文档管理页上传成功后按文档 ID 每 2 秒调用状态接口轮询，DONE / FAILED 后停止。
-- FAILED 终态会拉取文档详情并展示 `errorMessage`；页面切换、翻页、删除和卸载都会清理轮询定时器。
-- 增加最大轮询次数，避免异常状态导致无限轮询。
+- Chat 页 Agent/RAG 模式切换，Agent 消息展示 intent/confidence。
+- 文档上传后按文档 ID 每 2s 自动轮询状态，DONE / FAILED 后停止，FAILED 展示 errorMessage。
+- 上传进度条 + 分页控件。
 
-### 下一阶段：第四阶段（真实 Dashboard 与工程化）
+### 第四阶段：Dashboard、工程化加固与代码质量 ✅
 
-- 核对并完善 `/api/dashboard/stats` 的当前用户维度统计，确保知识库、文档、chunk、会话和失败任务不跨用户。
-- 前端 Dashboard 继续以统一统计接口为准，修正任何残留的前端本地聚合逻辑。
-- 补充 GitHub Actions CI：Backend `mvn test`、Frontend `npm ci && npm run build`、Go `go test ./...`、Worker `python -m app.main --check` 或最小配置检查。
-- 同步 README、API、Agent Design、Resume Description 文档。
+- `/api/dashboard/stats` 移入 `DashboardService`，聚合当前用户统计（不跨用户）。
+- 统计字段对齐 `kbCount / docCount / doneDocCount / failedDocCount / chunkCount / chatCount`，并返回最近文档、最近会话和最近失败任务。
+- 前端 Dashboard 改为读取统一统计接口的新字段，展示真实最近文档、失败任务和会话。
+- 全量错误处理加固：5 处 `catch {}` → `console.error`，Go handler 脱敏，Worker 瞬态重试。
+- DB 连接池、向量 NaN 防护、requestId 中间件、embedding 批量请求。
+- 死代码清理、md 文档同步更新。
+- GitHub Actions CI 已补充：Backend `mvn test`、Frontend `npm ci && npm run build`、Go RAG `go test ./...`、Python Worker `compileall + --check`。
+
+### 下一步：最终端到端验收
+
+- 启动完整 Docker Compose，运行 `scripts/smoke-e2e.sh` 验证上传、解析、检索、SSE answer/sources。
+- 做一次最终 diff review，确认没有无关改动和敏感配置。
+- 可选补充 DashboardService 单元测试或轻量集成测试。
 
 ## P0: 真实闭环与可信度
 

@@ -46,9 +46,16 @@ func (m *MockProvider) Embed(ctx context.Context, text string) ([]float32, error
 	if dim <= 0 {
 		dim = 1536
 	}
+	// 基于输入文本产生确定性变体向量，而非所有查询全相同
 	vec := make([]float32, dim)
+	seed := uint32(0)
+	for _, r := range text {
+		seed = seed*31 + uint32(r)
+	}
 	for i := range vec {
-		vec[i] = 0.001
+		// 用 seed + index 产生一个 -0.1 ~ 0.1 的伪随机值叠加在 0.05 基线上
+		h := (seed + uint32(i)) * 2654435761 // Knuth multiplicative hash
+		vec[i] = 0.05 + (float32(h%200)-100)/1000.0
 	}
 	return vec, nil
 }

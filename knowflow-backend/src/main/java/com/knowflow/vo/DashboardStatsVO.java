@@ -1,5 +1,6 @@
 package com.knowflow.vo;
 
+import com.knowflow.entity.ChatSession;
 import lombok.Builder;
 import lombok.Data;
 
@@ -9,12 +10,13 @@ import java.util.List;
 @Builder
 public class DashboardStatsVO {
 
-    private long knowledgeBaseCount;
-    private long documentCount;
-    private long parsedDocumentCount;
+    private long kbCount;
+    private long docCount;
+    private long doneDocCount;
+    private long failedDocCount;
     private long chunkCount;
-    private long sessionCount;
-    private long questionCount;
-    private List<DocumentVO> recentDocuments;
-    private List<String> recentFailedTasks;
+    private long chatCount;
+    private List<DocumentVO> recentDocs;
+    private List<ChatSession> recentSessions;
+    private List<RecentFailedTaskVO> recentFailedTasks;
 }

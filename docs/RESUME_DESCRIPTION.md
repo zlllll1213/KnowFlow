@@ -11,7 +11,7 @@ KnowFlow 是一个多服务 RAG 智能知识库问答平台，支持用户注册
 - RAG: Go, Gin, pgvector, LLM Provider abstraction
 - Worker: Python, Redis queue, pypdf, python-docx, embedding pipeline
 - Storage: PostgreSQL 16 + pgvector, Redis, MinIO
-- Engineering: Docker Compose, health checks, smoke test
+- Engineering: Docker Compose, GitHub Actions CI, health checks, smoke test
 
 ## 项目难点
 
@@ -26,12 +26,14 @@ KnowFlow 是一个多服务 RAG 智能知识库问答平台，支持用户注册
 - 增加 Worker 配置检查、并发消费、路径安全和 embedding 维度校验。
 - 增加 Agent 模式，支持意图识别、检索规划、回答生成、引用守卫和 trace。
 - 增加 dashboard 真实统计、RAG 调用日志和最近失败任务。
+- 新增 GitHub Actions CI，覆盖 Spring Boot 测试、Vue 构建、Go 测试和 Python Worker 配置检查。
 
 ## 可量化写法
 
 - “设计并落地 Spring Boot + Go + Python Worker 多服务 RAG 架构，完成文档解析、向量检索、SSE 流式问答和引用溯源闭环。”
 - “通过 Redis 队列和 Worker 状态机实现异步文档处理，支持解析失败追踪、重复任务恢复和并发消费。”
 - “新增 Agent 工作流和 Citation Guard，在 sources 不足时自动降级，降低知识库问答幻觉风险。”
+- “补齐 CI、Dashboard 统计和文档体系，使项目从功能演示升级为可交付、可验收的工程项目。”
 
 ## 面试讲解话术
 

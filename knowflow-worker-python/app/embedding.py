@@ -66,18 +66,37 @@ def _openai_compatible_embed(chunks: list[DocumentChunk]) -> None:
 def _ollama_embed(chunks: list[DocumentChunk]) -> None:
     base_url = (config.embedding_base_url or "http://localhost:11434").rstrip("/")
     model = config.embedding_model or "nomic-embed-text"
+    batch_size = config.embedding_batch_size
 
     with httpx.Client(timeout=config.embedding_timeout_seconds) as client:
-        for chunk in chunks:
+        for batch in _batched(chunks, batch_size):
+            texts = [chunk.content for chunk in batch]
             resp = client.post(
                 f"{base_url}/api/embeddings",
-                json={"model": model, "prompt": chunk.content},
+                json={"model": model, "input": texts},
             )
             resp.raise_for_status()
-            embedding = resp.json().get("embedding")
-            if not embedding:
-                raise RuntimeError("Ollama embedding 未返回向量")
-            chunk.embedding = embedding
+            payload = resp.json()
+            embeddings = payload.get("embeddings") or []
+            if not embeddings:
+                # 回退：可能是旧版 Ollama，尝试逐个请求
+                for chunk in batch:
+                    single_resp = client.post(
+                        f"{base_url}/api/embeddings",
+                        json={"model": model, "prompt": chunk.content},
+                    )
+                    single_resp.raise_for_status()
+                    emb = single_resp.json().get("embedding")
+                    if not emb:
+                        raise RuntimeError("Ollama embedding 未返回向量")
+                    chunk.embedding = emb
+                continue
+            if len(embeddings) != len(batch):
+                raise RuntimeError(
+                    f"Ollama embedding 返回数量不匹配: expected={len(batch)}, got={len(embeddings)}"
+                )
+            for chunk, emb in zip(batch, embeddings):
+                chunk.embedding = emb
 
     log.info("Ollama embedding 完成: chunks=%d, model=%s", len(chunks), model)
 
