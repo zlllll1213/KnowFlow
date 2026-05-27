@@ -22,6 +22,7 @@
     </div>
     <div class="kb-footer">
       <span class="kb-meta"><el-icon><Document /></el-icon> {{ kb.documentCount ?? 0 }} 个文档</span>
+      <span class="kb-meta"><el-icon><Check /></el-icon> {{ kb.doneCount ?? 0 }} 已解析</span>
       <span class="kb-meta">{{ formatDate(kb.updatedAt) }}</span>
     </div>
   </div>
@@ -71,7 +72,7 @@ function formatDate(d: string) {
 .kb-body { flex: 1; }
 .kb-name { font-family: var(--font-heading); font-size: 16px; font-weight: 600; color: var(--color-text-primary); margin-bottom: 6px; }
 .kb-desc { font-size: 13px; color: var(--color-text-secondary); line-height: 1.5; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-.kb-footer { display: flex; align-items: center; justify-content: space-between; padding-top: 12px; border-top: 1px solid var(--color-border); }
+.kb-footer { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; padding-top: 12px; border-top: 1px solid var(--color-border); }
 .kb-meta { display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--color-text-muted); }
 
 @media (max-width: 480px) {

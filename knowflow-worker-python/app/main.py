@@ -22,6 +22,7 @@ import tempfile
 import time
 import traceback
 from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor
 
 # 确保 app 包可导入
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -73,6 +74,7 @@ def process_task(task_id: int):
             raise RuntimeError(f"文档不存在: docId={task.document_id}")
 
         # 3. 更新文档状态 → PARSING
+        update_task_status(conn, task.id, TaskStatus.PARSING)
         update_document_status(conn, doc.id, DocStatus.PARSING)
 
         # 4. 下载原始文件到临时目录
@@ -93,6 +95,7 @@ def process_task(task_id: int):
             return
 
         # 7. 更新文档状态 → EMBEDDING
+        update_task_status(conn, task.id, TaskStatus.EMBEDDING)
         update_document_status(conn, doc.id, DocStatus.EMBEDDING)
 
         # 8. 生成 embedding
@@ -168,6 +171,38 @@ def recover_tasks_on_start(redis_client):
         log.info("启动恢复检查完成，无需恢复的任务")
 
 
+def run_checks():
+    from app.queue import create_redis_client
+    from app.repository import check_database
+
+    log.info("检查 Redis 连接")
+    redis_client = create_redis_client()
+    try:
+        redis_client.ping()
+    finally:
+        redis_client.close()
+
+    log.info("检查 PostgreSQL 连接")
+    check_database()
+
+    if config.storage_type == "minio":
+        from minio import Minio
+        client = Minio(
+            config.minio_endpoint,
+            access_key=config.minio_access_key,
+            secret_key=config.minio_secret_key,
+            secure=config.minio_secure,
+        )
+        if not client.bucket_exists(config.minio_bucket):
+            raise RuntimeError(f"MinIO bucket 不存在: {config.minio_bucket}")
+    else:
+        root = Path(config.storage_local_path).resolve()
+        root.mkdir(parents=True, exist_ok=True)
+        test_file = root / ".knowflow-worker-check"
+        test_file.write_text("ok", encoding="utf-8")
+        test_file.unlink(missing_ok=True)
+
+
 def main():
     """Worker 主循环。"""
     errors = config.validate()
@@ -178,6 +213,7 @@ def main():
     config.ensure_local_storage_dir()
 
     if "--check" in sys.argv:
+        run_checks()
         log.info("KnowFlow Python Worker 配置检查通过")
         return
 
@@ -191,19 +227,19 @@ def main():
     redis_client = create_redis_client()
     recover_tasks_on_start(redis_client)
 
-    # 简单的单线程循环（后续可改为多线程/多进程）
-    while True:
-        try:
-            task_id = block_pop_task(redis_client, timeout=5)
-            if task_id is None:
-                continue
-            process_task(task_id)
-        except KeyboardInterrupt:
-            log.info("Worker 收到停止信号，退出")
-            break
-        except Exception as e:
-            log.error("Worker 主循环异常: %s", e, exc_info=True)
-            time.sleep(5)  # 异常后等待一段时间
+    with ThreadPoolExecutor(max_workers=config.concurrency) as executor:
+        while True:
+            try:
+                task_id = block_pop_task(redis_client, timeout=5)
+                if task_id is None:
+                    continue
+                executor.submit(process_task, task_id)
+            except KeyboardInterrupt:
+                log.info("Worker 收到停止信号，退出")
+                break
+            except Exception as e:
+                log.error("Worker 主循环异常: %s", e, exc_info=True)
+                time.sleep(5)
 
     redis_client.close()
 

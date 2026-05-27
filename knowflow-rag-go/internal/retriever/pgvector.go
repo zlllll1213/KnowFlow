@@ -19,6 +19,22 @@ type PgRetriever struct {
 	db *sql.DB
 }
 
+type CallLog struct {
+	KbID              int64
+	UserID            int64
+	SessionID         int64
+	Mode              string
+	Intent            string
+	QuestionSummary   string
+	TopK              int
+	SourceCount       int
+	RetrieveLatencyMs int64
+	LLMLatencyMs      int64
+	TotalLatencyMs    int64
+	Confidence        float64
+	TraceJSON         string
+}
+
 func New(cfg *config.Config) (*PgRetriever, error) {
 	db, err := sql.Open("postgres", cfg.DBDSN)
 	if err != nil {
@@ -195,5 +211,29 @@ func isHanRun(s string) bool {
 func (r *PgRetriever) Close() {
 	if r.db != nil {
 		r.db.Close()
+	}
+}
+
+func (r *PgRetriever) LogCall(ctx context.Context, logEntry CallLog) {
+	if r.db == nil {
+		return
+	}
+	if logEntry.TraceJSON == "" {
+		logEntry.TraceJSON = "[]"
+	}
+	if logEntry.Mode == "" {
+		logEntry.Mode = "rag"
+	}
+	_, err := r.db.ExecContext(ctx, `
+		INSERT INTO rag_call_log (
+			kb_id, user_id, session_id, mode, intent, question_summary, top_k,
+			source_count, retrieve_latency_ms, llm_latency_ms, total_latency_ms,
+			confidence, trace
+		) VALUES ($1, NULLIF($2, 0), NULLIF($3, 0), $4, $5, $6, $7, $8, $9, $10, $11, $12, $13::jsonb)
+	`, logEntry.KbID, logEntry.UserID, logEntry.SessionID, logEntry.Mode, logEntry.Intent,
+		logEntry.QuestionSummary, logEntry.TopK, logEntry.SourceCount, logEntry.RetrieveLatencyMs,
+		logEntry.LLMLatencyMs, logEntry.TotalLatencyMs, logEntry.Confidence, logEntry.TraceJSON)
+	if err != nil {
+		log.Printf("RAG 调用日志写入失败: %v", err)
 	}
 }

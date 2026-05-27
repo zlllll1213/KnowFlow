@@ -18,16 +18,25 @@
       <p>还没有知识库，立即创建一个</p>
       <el-button type="primary" @click="openCreate">新建知识库</el-button>
     </div>
-    <div v-else class="kb-grid">
-      <KnowledgeBaseCard
+	    <div v-else class="kb-grid">
+	      <KnowledgeBaseCard
         v-for="kb in kbs"
         :key="kb.id"
         :kb="kb"
         @click="goDetail(kb.id)"
         @edit="openEdit(kb)"
-        @delete="confirmDelete(kb)"
-      />
-    </div>
+	        @delete="confirmDelete(kb)"
+	      />
+	    </div>
+	    <el-pagination
+	      v-if="total > pageSize"
+	      class="pager"
+	      layout="prev, pager, next"
+	      :current-page="page"
+	      :page-size="pageSize"
+	      :total="total"
+	      @current-change="handlePageChange"
+	    />
 
     <!-- Create / Edit Dialog -->
     <el-dialog v-model="dialogVisible" :title="editingKb ? '编辑知识库' : '新建知识库'" width="480px">
@@ -61,6 +70,9 @@ const router = useRouter()
 const loading = ref(false)
 const saving = ref(false)
 const kbs = ref<KbVO[]>([])
+const page = ref(1)
+const pageSize = ref(12)
+const total = ref(0)
 const dialogVisible = ref(false)
 const editingKb = ref<KbVO | null>(null)
 const dialogFormRef = ref<FormInstance>()
@@ -71,12 +83,21 @@ const dialogRules: FormRules = {
 
 async function loadList() {
   loading.value = true
-  try { kbs.value = await getKbList() } catch {} finally { loading.value = false }
+  try {
+    const result = await getKbList(page.value, pageSize.value)
+    kbs.value = result.records
+    total.value = result.total
+  } catch {} finally { loading.value = false }
 }
 
 onMounted(loadList)
 
 function goDetail(id: number) { router.push(`/kb/${id}`) }
+
+function handlePageChange(nextPage: number) {
+  page.value = nextPage
+  loadList()
+}
 
 function openCreate() {
   editingKb.value = null
@@ -110,10 +131,11 @@ async function handleSave() {
     if (editingKb.value) {
       await updateKb(editingKb.value.id, dialogForm)
       ElMessage.success('已更新')
-    } else {
-      await createKb(dialogForm)
-      ElMessage.success('创建成功')
-    }
+	    } else {
+	      await createKb(dialogForm)
+	      ElMessage.success('创建成功')
+	      page.value = 1
+	    }
     dialogVisible.value = false
     loadList()
   } catch (e: any) { ElMessage.error(e.message) } finally { saving.value = false }
@@ -125,6 +147,7 @@ async function handleSave() {
 .empty-icon { font-size: 48px; color: var(--color-border); }
 .empty-state p { font-size: 15px; }
 .kb-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 20px; }
+.pager { margin-top: 22px; justify-content: center; }
 
 @media (max-width: 560px) {
   .empty-state {

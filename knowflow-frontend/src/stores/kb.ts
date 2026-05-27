@@ -8,7 +8,7 @@ export const useKbStore = defineStore('kb', () => {
   const currentKb = ref<KbVO | null>(null)
 
   async function loadList() {
-    knowledgeBaseList.value = await getKbList()
+    knowledgeBaseList.value = (await getKbList()).records
   }
 
   async function loadDetail(id: number) {

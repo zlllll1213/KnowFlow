@@ -1,7 +1,9 @@
 package com.knowflow.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.knowflow.common.BusinessException;
+import com.knowflow.common.PageResult;
 import com.knowflow.dto.KbCreateRequest;
 import com.knowflow.dto.KbUpdateRequest;
 import com.knowflow.entity.ChatMessage;
@@ -44,12 +46,13 @@ public class KnowledgeBaseServiceImpl implements KnowledgeBaseService {
     }
 
     @Override
-    public List<KbVO> list(Long userId) {
-        List<KnowledgeBase> list = kbMapper.selectList(
+    public PageResult<KbVO> list(Long userId, long page, long size) {
+        Page<KnowledgeBase> result = kbMapper.selectPage(new Page<>(page, size),
                 new LambdaQueryWrapper<KnowledgeBase>()
                         .eq(KnowledgeBase::getUserId, userId)
                         .orderByDesc(KnowledgeBase::getUpdatedAt));
-        return list.stream().map(this::toVO).collect(Collectors.toList());
+        List<KbVO> records = result.getRecords().stream().map(this::toVO).collect(Collectors.toList());
+        return PageResult.of(result.getTotal(), result.getCurrent(), result.getSize(), records);
     }
 
     @Override
@@ -111,8 +114,20 @@ public class KnowledgeBaseServiceImpl implements KnowledgeBaseService {
                 .id(kb.getId())
                 .name(kb.getName())
                 .description(kb.getDescription())
+                .documentCount(countDocuments(kb.getUserId(), kb.getId(), null))
+                .doneCount(countDocuments(kb.getUserId(), kb.getId(), "DONE"))
                 .createdAt(kb.getCreatedAt())
                 .updatedAt(kb.getUpdatedAt())
                 .build();
+    }
+
+    private Long countDocuments(Long userId, Long kbId, String status) {
+        LambdaQueryWrapper<Document> query = new LambdaQueryWrapper<Document>()
+                .eq(Document::getUserId, userId)
+                .eq(Document::getKbId, kbId);
+        if (StringUtils.hasText(status)) {
+            query.eq(Document::getStatus, status);
+        }
+        return documentMapper.selectCount(query);
     }
 }

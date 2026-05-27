@@ -18,18 +18,21 @@ import {
   Check,
   Clock,
   Collection,
+  Connection,
   Document,
   DocumentCopy,
   Files,
   Folder,
   Loading,
   MoreFilled,
+  Operation,
   Plus,
   Promotion,
   Refresh,
   SwitchButton,
   Upload,
   UploadFilled,
+  WarningFilled,
 } from '@element-plus/icons-vue'
 import 'element-plus/dist/index.css'
 import './assets/main.css'
@@ -63,18 +66,21 @@ const iconComponents = {
   Check,
   Clock,
   Collection,
+  Connection,
   Document,
   DocumentCopy,
   Files,
   Folder,
   Loading,
   MoreFilled,
+  Operation,
   Plus,
   Promotion,
   Refresh,
   SwitchButton,
   Upload,
   UploadFilled,
+  WarningFilled,
 }
 
 elementComponents.forEach((component) => app.use(component))

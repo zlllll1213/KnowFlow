@@ -16,10 +16,14 @@ public class ParseTask {
 
     private Long kbId;
 
-    /** PENDING / PROCESSING / DONE / FAILED / CANCELLED */
+    /** PENDING / PROCESSING / PARSING / EMBEDDING / DONE / FAILED / CANCELLED */
     private String status;
 
     private String errorMessage;
+
+    private Integer retryCount;
+
+    private LocalDateTime lastErrorAt;
 
     @TableField(fill = FieldFill.INSERT)
     private LocalDateTime createdAt;

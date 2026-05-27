@@ -35,13 +35,13 @@
       </div>
 
       <div class="card panel">
-        <div class="panel-title"><el-icon><ChatDotRound /></el-icon> 最近会话</div>
-        <div v-if="recentSessions.length === 0" class="empty-tip">暂无会话</div>
-        <div v-for="s in recentSessions" :key="s.id" class="list-item">
-          <div class="item-icon chat"><el-icon><ChatDotRound /></el-icon></div>
+        <div class="panel-title"><el-icon><Warning /></el-icon> 最近失败任务</div>
+        <div v-if="recentFailures.length === 0" class="empty-tip">暂无失败任务</div>
+        <div v-for="(item, idx) in recentFailures" :key="idx" class="list-item">
+          <div class="item-icon chat"><el-icon><Warning /></el-icon></div>
           <div class="item-body">
-            <div class="item-name">{{ s.title }}</div>
-            <div class="item-meta">{{ formatDate(s.updatedAt) }}</div>
+            <div class="item-name">{{ item }}</div>
+            <div class="item-meta">Worker 解析失败</div>
           </div>
         </div>
         <router-link to="/chat" class="panel-more">进入问答 →</router-link>
@@ -53,36 +53,37 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { useAuthStore } from '@/stores/auth'
-import { getKbList } from '@/api/kb'
-import { getDocumentList } from '@/api/document'
+import { getDashboardStats } from '@/api/dashboard'
 import type { DocumentVO } from '@/types/document'
-import type { ChatSessionVO } from '@/types/chat'
 
 const authStore = useAuthStore()
 
 const kbCount = ref(0)
 const docCount = ref(0)
 const doneCount = ref(0)
+const chunkCount = ref(0)
+const questionCount = ref(0)
 const recentDocs = ref<DocumentVO[]>([])
-const recentSessions = ref<ChatSessionVO[]>([])
+const recentFailures = ref<string[]>([])
 
 const stats = computed(() => [
   { label: '知识库', value: kbCount.value, icon: 'Collection', bg: '#eef2ff', color: '#4f46e5' },
   { label: '文档总数', value: docCount.value, icon: 'Document', bg: '#fef9c3', color: '#854d0e' },
   { label: '已完成解析', value: doneCount.value, icon: 'CircleCheck', bg: '#d1fae5', color: '#065f46' },
-  { label: '活跃会话', value: recentSessions.value.length, icon: 'ChatDotRound', bg: '#ffe4e6', color: '#9f1239' },
+  { label: '切片总数', value: chunkCount.value, icon: 'Files', bg: '#e0f2fe', color: '#075985' },
+  { label: '问答次数', value: questionCount.value, icon: 'ChatDotRound', bg: '#ffe4e6', color: '#9f1239' },
 ])
 
 onMounted(async () => {
   try {
-    const kbs = await getKbList()
-    kbCount.value = kbs.length
-    if (kbs.length > 0) {
-      const docs = await getDocumentList(kbs[0].id)
-      docCount.value = docs.length
-      doneCount.value = docs.filter(d => d.status === 'DONE').length
-      recentDocs.value = docs.slice(0, 5)
-    }
+    const stats = await getDashboardStats()
+    kbCount.value = stats.knowledgeBaseCount
+    docCount.value = stats.documentCount
+    doneCount.value = stats.parsedDocumentCount
+    chunkCount.value = stats.chunkCount
+    questionCount.value = stats.questionCount
+    recentDocs.value = stats.recentDocuments ?? []
+    recentFailures.value = stats.recentFailedTasks ?? []
   } catch {}
 })
 
@@ -103,7 +104,7 @@ function formatDate(d: string) {
 </script>
 
 <style scoped>
-.stat-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 28px; }
+.stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin-bottom: 28px; }
 .stat-card {
   background: var(--color-surface); border: 1px solid var(--color-border);
   border-radius: var(--radius-lg); padding: 20px; display: flex; align-items: center; gap: 16px;

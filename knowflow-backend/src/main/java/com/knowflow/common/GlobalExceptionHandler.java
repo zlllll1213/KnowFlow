@@ -38,6 +38,6 @@ public class GlobalExceptionHandler {
     @ResponseStatus(HttpStatus.INTERNAL_SERVER_ERROR)
     public Result<Void> handleUnknown(Exception e) {
         log.error("未知异常", e);
-        return Result.error(50000, "服务器内部错误: " + e.getMessage());
+        return Result.error(50000, "服务器内部错误，请稍后重试");
     }
 }

@@ -30,7 +30,7 @@ func main() {
 	embeddingProvider := embedding.NewProvider(cfg)
 
 	// 初始化 RAG Service
-	ragService := service.New(ret, embeddingProvider, llmProvider, cfg.DefaultTopK, cfg.MaxTopK)
+	ragService := service.New(ret, embeddingProvider, llmProvider, cfg.DefaultTopK, cfg.MaxTopK, cfg.EmbeddingDim)
 
 	// 初始化 Handler
 	h := handler.New(ragService, cfg)
@@ -40,6 +40,10 @@ func main() {
 	r.GET("/health", h.Health)
 	r.POST("/rag/ask", h.Ask)
 	r.POST("/rag/ask/stream", h.AskStream)
+	r.POST("/agent/ask", h.AskAgent)
+	r.POST("/agent/ask/stream", h.AskAgentStream)
+	r.POST("/rag/agent/ask", h.AskAgent)
+	r.POST("/rag/agent/ask/stream", h.AskAgentStream)
 
 	log.Printf("Go RAG Service 启动: http://localhost:%s", cfg.Port)
 	if err := r.Run(":" + cfg.Port); err != nil {

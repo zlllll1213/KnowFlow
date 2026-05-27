@@ -1,6 +1,6 @@
 """
 文档解析器。
-支持 TXT、Markdown，预留 PDF、DOCX 扩展点。
+支持 TXT、Markdown、PDF、DOCX；扫描版 PDF 暂需后续接入 OCR。
 """
 
 import logging
@@ -44,8 +44,7 @@ def _parse_txt(file_path: str) -> str:
 def _parse_markdown(file_path: str) -> str:
     """
     解析 Markdown 文件。
-    第一版简单去除 Markdown 语法标记，保留纯文本。
-    后续可接入 markdown 库做更精细处理。
+    转为 HTML 后剥离标签，保留正文文本。
     """
     try:
         import markdown as md_lib
@@ -76,9 +75,7 @@ def _parse_markdown(file_path: str) -> str:
 
 def _parse_pdf(file_path: str) -> str:
     """
-    解析 PDF 文件。
-    TODO: 使用 pypdf 或 pdfplumber 实现。
-    当前返回占位提示。
+    使用 pypdf 解析 PDF 文件。扫描版 PDF 需要后续接入 OCR。
     """
     try:
         from pypdf import PdfReader
@@ -99,9 +96,7 @@ def _parse_pdf(file_path: str) -> str:
 
 def _parse_docx(file_path: str) -> str:
     """
-    解析 DOCX 文件。
-    TODO: 使用 python-docx 实现。
-    当前返回占位提示。
+    使用 python-docx 解析 DOCX 文件。
     """
     try:
         from docx import Document as DocxDocument
@@ -126,8 +121,11 @@ def download_from_minio(client, bucket: str, object_key: str, local_path: str):
 
 def download_from_local(storage_root: str, object_key: str, local_path: str):
     """从本地存储复制文件。"""
-    src = Path(storage_root) / object_key
+    root = Path(storage_root).resolve()
+    src = (root / object_key).resolve()
     log.info("从本地复制: src=%s", src)
+    if not src.is_relative_to(root):
+        raise PermissionError(f"非法文件路径: {object_key}")
     if not src.exists():
         raise FileNotFoundError(f"文件不存在: {src}")
     import shutil

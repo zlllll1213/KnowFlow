@@ -15,12 +15,14 @@ type Provider interface {
 	Embed(ctx context.Context, text string) ([]float32, error)
 }
 
-type MockProvider struct{}
+type MockProvider struct {
+	dim int
+}
 
 func NewProvider(cfg *config.Config) Provider {
 	switch strings.ToLower(cfg.EmbeddingProvider) {
 	case "", "mock":
-		return &MockProvider{}
+		return &MockProvider{dim: cfg.EmbeddingDim}
 	case "openai", "deepseek":
 		return &OpenAIProvider{
 			apiKey:  cfg.EmbeddingAPIKey,
@@ -35,12 +37,20 @@ func NewProvider(cfg *config.Config) Provider {
 			client:  &http.Client{Timeout: cfg.RequestTimeout},
 		}
 	default:
-		return &MockProvider{}
+		return &MockProvider{dim: cfg.EmbeddingDim}
 	}
 }
 
 func (m *MockProvider) Embed(ctx context.Context, text string) ([]float32, error) {
-	return nil, nil
+	dim := m.dim
+	if dim <= 0 {
+		dim = 1536
+	}
+	vec := make([]float32, dim)
+	for i := range vec {
+		vec[i] = 0.001
+	}
+	return vec, nil
 }
 
 type OpenAIProvider struct {

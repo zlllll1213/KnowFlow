@@ -26,6 +26,7 @@ def generate_embeddings(chunks: list[DocumentChunk]) -> None:
         _ollama_embed(chunks)
     else:
         raise ValueError(f"不支持的 embedding provider: {provider}")
+    _validate_embedding_dimensions(chunks)
 
 
 def _mock_embed(chunks: list[DocumentChunk]) -> None:
@@ -85,3 +86,14 @@ def _batched(items: list[DocumentChunk], size: int) -> Iterable[list[DocumentChu
     size = max(size, 1)
     for idx in range(0, len(items), size):
         yield items[idx:idx + size]
+
+
+def _validate_embedding_dimensions(chunks: list[DocumentChunk]) -> None:
+    expected = config.embedding_dim
+    for chunk in chunks:
+        actual = len(chunk.embedding or [])
+        if actual != expected:
+            raise RuntimeError(
+                f"embedding dimension mismatch: expected={expected}, actual={actual}, "
+                f"docId={chunk.document_id}, chunkIndex={chunk.chunk_index}"
+            )

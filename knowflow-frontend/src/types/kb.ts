@@ -4,7 +4,8 @@ export interface KbVO {
   description: string
   createdAt: string
   updatedAt: string
-  documentCount?: number
+  documentCount: number
+  doneCount: number
 }
 
 export interface KbCreateRequest {

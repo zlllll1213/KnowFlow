@@ -66,9 +66,13 @@ Spring Boot → POST /rag/ask 或 /rag/ask/stream → Go RAG Service
 ```
 Content-Type: text/event-stream
 
+event: token
 data: {"type":"token","content":"RAG"}
-data: {"type":"token","content":"（检索"}
+
+event: sources
 data: {"type":"sources","sources":[...]}
+
+event: done
 data: {"type":"done"}
 ```
 
@@ -77,7 +81,7 @@ data: {"type":"done"}
 | 变量 | 说明 | 默认值 |
 |------|------|--------|
 | `RAG_PORT` | 服务端口 | 8090 |
-| `RAG_DB_DSN` | PostgreSQL 连接串 | postgres://knowflow:knowflow123@localhost:5432/knowflow |
+| `RAG_DB_DSN` | PostgreSQL 连接串 | postgres://knowflow:change_me@localhost:5432/knowflow |
 | `RAG_REQUEST_TIMEOUT_SECONDS` | 外部模型请求超时时间 | 60 |
 | `RAG_DEFAULT_TOP_K` | 默认检索条数 | 5 |
 | `RAG_MAX_TOP_K` | 最大检索条数上限 | 20 |
@@ -137,6 +141,7 @@ curl -X POST http://localhost:8090/rag/ask/stream \
 | Mock LLM | ✅ | 返回固定模板 |
 | DeepSeek / OpenAI / Ollama LLM | ✅ | 支持同步与流式调用 |
 | SSE 流式输出 | ✅ | text/event-stream |
+| Agent 工作流 | ✅ | Intent Router / Retriever / Answer / Citation Guard |
 | Prompt 构建 | ✅ | system + user messages |
 
 ## 后续规划

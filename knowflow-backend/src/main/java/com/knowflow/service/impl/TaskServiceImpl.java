@@ -7,6 +7,8 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 @Slf4j
 @Service
@@ -20,17 +22,31 @@ public class TaskServiceImpl implements TaskService {
     private static final String PARSE_QUEUE_KEY = "knowflow:parse:queue";
 
     @Override
-    public void createParseTask(Long documentId, Long kbId) {
-        // 创建 parse_task 记录
+    public Long createParseTask(Long documentId, Long kbId) {
         ParseTask task = new ParseTask();
         task.setDocumentId(documentId);
         task.setKbId(kbId);
         task.setStatus("PENDING");
         parseTaskMapper.insert(task);
 
-        // 将 taskId 推入 Redis 队列
-        redisTemplate.opsForList().rightPush(PARSE_QUEUE_KEY, task.getId().toString());
+        Runnable enqueue = () -> enqueueParseTask(task.getId(), documentId);
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    enqueue.run();
+                }
+            });
+            log.info("解析任务已创建，等待事务提交后入队: taskId={}, documentId={}", task.getId(), documentId);
+        } else {
+            enqueue.run();
+        }
 
-        log.info("解析任务已创建: taskId={}, documentId={}, 已推入队列 {}", task.getId(), documentId, PARSE_QUEUE_KEY);
+        return task.getId();
+    }
+
+    private void enqueueParseTask(Long taskId, Long documentId) {
+        redisTemplate.opsForList().rightPush(PARSE_QUEUE_KEY, taskId.toString());
+        log.info("解析任务已入队: taskId={}, documentId={}, queue={}", taskId, documentId, PARSE_QUEUE_KEY);
     }
 }

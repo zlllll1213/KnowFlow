@@ -26,7 +26,7 @@ const router = createRouter({
 router.beforeEach((to, _from, next) => {
   const token = getToken()
   if (!to.meta.public && !token) {
-    next('/login')
+    next({ path: '/login', query: { redirect: to.fullPath } })
   } else if (to.meta.public && token && (to.path === '/login' || to.path === '/register')) {
     next('/dashboard')
   } else {

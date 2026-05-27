@@ -1,8 +1,10 @@
 package com.knowflow.controller;
 
+import com.knowflow.common.PageResult;
 import com.knowflow.common.Result;
 import com.knowflow.dto.ChatAskRequest;
 import com.knowflow.dto.ChatSessionCreateRequest;
+import com.knowflow.dto.PageRequest;
 import com.knowflow.entity.ChatSession;
 import com.knowflow.security.LoginUser;
 import com.knowflow.service.ChatService;
@@ -12,8 +14,6 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
-
-import java.util.List;
 
 @RestController
 @RequestMapping("/api/chat")
@@ -32,9 +32,12 @@ public class ChatController {
 
     /** 会话列表 */
     @GetMapping("/session/list")
-    public Result<List<ChatSession>> listSessions(@AuthenticationPrincipal LoginUser loginUser,
-                                                  @RequestParam Long kbId) {
-        List<ChatSession> sessions = chatService.listSessions(loginUser.getUserId(), kbId);
+    public Result<PageResult<ChatSession>> listSessions(@AuthenticationPrincipal LoginUser loginUser,
+                                                        @RequestParam Long kbId,
+                                                        @RequestParam(required = false) Long page,
+                                                        @RequestParam(required = false) Long size) {
+        PageResult<ChatSession> sessions = chatService.listSessions(loginUser.getUserId(), kbId,
+                PageRequest.normalizePage(page), PageRequest.normalizeSize(size));
         return Result.success(sessions);
     }
 
@@ -55,9 +58,12 @@ public class ChatController {
 
     /** 聊天历史 */
     @GetMapping("/history")
-    public Result<List<ChatMessageVO>> history(@AuthenticationPrincipal LoginUser loginUser,
-                                               @RequestParam Long sessionId) {
-        List<ChatMessageVO> messages = chatService.getHistory(loginUser.getUserId(), sessionId);
+    public Result<PageResult<ChatMessageVO>> history(@AuthenticationPrincipal LoginUser loginUser,
+                                                     @RequestParam Long sessionId,
+                                                     @RequestParam(required = false) Long page,
+                                                     @RequestParam(required = false) Long size) {
+        PageResult<ChatMessageVO> messages = chatService.getHistory(loginUser.getUserId(), sessionId,
+                PageRequest.normalizePage(page), PageRequest.normalizeSize(size));
         return Result.success(messages);
     }
 }
