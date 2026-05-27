@@ -2,7 +2,7 @@
 
 ## Staged Execution Status · 2026-05-27
 
-**全部五个阶段已完成。** 第五阶段（最终验收补强）已补齐 smoke-e2e Agent 断言、Go embedding 单元测试，并验证 Ollama embedding 兼容性。
+**全部六个阶段已完成。** 第六阶段（Dashboard 统计可信度）已补齐 `DashboardServiceImpl` 最小单元测试，验证当前用户维度统计与 SQL 作用域参数。
 
 ### 第一阶段：稳定 RAG 主链路 ✅
 
@@ -46,11 +46,19 @@
 - 新增 `knowflow-rag-go/internal/embedding/provider_test.go`：MockProvider 确定性/不同文本差异性/维度，OllamaProvider 单次请求体格式/空向量报错/HTTP 错误状态码。
 - `go test ./...` 全量通过（含新增 7 个 embedding 用例）。
 
+### 第六阶段：Dashboard 统计可信度 ✅
+
+- 新增 `DashboardServiceImplTest`，使用 JUnit5 + Mockito 做轻量单元测试，不启动 Spring 容器。
+- 验证 `/api/dashboard/stats` 背后的聚合字段：知识库数、文档数、DONE/FAILED 文档数、chunk 数、用户提问数、最近文档、最近会话、最近失败任务。
+- 验证知识库、文档、聊天消息、最近文档、最近会话统计查询均被纳入 `getStats` 聚合路径。
+- 使用手写 `RecordingJdbcTemplate` 捕获原生 SQL 与参数，检查 `chunkCount` 和 `recentFailedTasks` 均使用 `d.user_id = ?`、`kb.user_id = ?`，且参数为当前 `userId` 两次，避免跨用户统计。
+- 覆盖 `chunkCount` SQL 返回 `null` 时降级为 0 的边界行为。
+
 ### 下一步
 
 - 启动完整 Docker Compose，运行 `scripts/smoke-e2e.sh` 验证全链路。
 - 做一次最终 diff review，确认没有无关改动和敏感配置。
-- 可选补充 DashboardService 单元测试或轻量集成测试。
+- 可选补充 Chat/Agent SSE 解析的前端单元测试或轻量 Playwright 演示验收。
 
 ## P0: 真实闭环与可信度
 
@@ -109,6 +117,7 @@
 - `mvn test -q`: passed.
 - `npm run build`: passed.
 - `go test ./...`: passed.
+- `cd knowflow-backend && mvn test -q` after DashboardServiceImpl test: passed.
 - `python3 -m compileall app`: passed.
 - `./.venv/bin/python -m app.main --check`: passed.
 - `python3 -m app.main --check`: failed in the global interpreter because dependencies such as `redis` are not installed there.
