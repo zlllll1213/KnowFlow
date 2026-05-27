@@ -2,7 +2,7 @@
 
 ## Staged Execution Status · 2026-05-27
 
-**全部四个阶段已完成。** 当前最新收尾记录：第四阶段已补齐真实 Dashboard 统计、GitHub Actions CI 和主要文档同步。
+**全部五个阶段已完成。** 第五阶段（最终验收补强）已补齐 smoke-e2e Agent 断言、Go embedding 单元测试，并验证 Ollama embedding 兼容性。
 
 ### 第一阶段：稳定 RAG 主链路 ✅
 
@@ -38,9 +38,17 @@
 - 死代码清理、md 文档同步更新。
 - GitHub Actions CI 已补充：Backend `mvn test`、Frontend `npm ci && npm run build`、Go RAG `go test ./...`、Python Worker `compileall + --check`。
 
-### 下一步：最终端到端验收
+### 第五阶段：最终验收补强 ✅
 
-- 启动完整 Docker Compose，运行 `scripts/smoke-e2e.sh` 验证上传、解析、检索、SSE answer/sources。
+- `scripts/smoke-e2e.sh` 增加 Agent 流式断言：`event:meta`（confidence 数值 0-1、trace 非空 step/detail）、`event:token`、`event:sources`（真实字段）、`event:done`。
+- RAG 与 Agent 流均增加 fallback-disabled 验证：回答中不含 `mock`/`fallback`/`模拟`/`mock-notice.txt`。
+- 验证 Go Ollama embedding（`/api/embeddings` + `"prompt"`）兼容实际 Ollama 单文本接口 — Go 侧仅做查询时单条 embedding，批量为 Python Worker 职责，无需修改。
+- 新增 `knowflow-rag-go/internal/embedding/provider_test.go`：MockProvider 确定性/不同文本差异性/维度，OllamaProvider 单次请求体格式/空向量报错/HTTP 错误状态码。
+- `go test ./...` 全量通过（含新增 7 个 embedding 用例）。
+
+### 下一步
+
+- 启动完整 Docker Compose，运行 `scripts/smoke-e2e.sh` 验证全链路。
 - 做一次最终 diff review，确认没有无关改动和敏感配置。
 - 可选补充 DashboardService 单元测试或轻量集成测试。
 

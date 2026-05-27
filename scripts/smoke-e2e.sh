@@ -181,6 +181,152 @@ for source in sources:
     for key in ("chunkId", "documentId", "fileName", "content"):
         if source.get(key) in (None, "", 0):
             raise SystemExit(f"source missing real {key}: {source}")
+
+# 验证 fallback 未启用：回答中不应出现 mock/fallback/模拟 字样
+all_answers = []
+for name, data in events:
+    if name in ("token", "done"):
+        try:
+            payload = json.loads(data)
+            content = payload.get("content") or payload.get("answer") or ""
+            if isinstance(content, str):
+                all_answers.append(content)
+        except (json.JSONDecodeError, TypeError):
+            pass
+full_answer = " ".join(all_answers).lower()
+for bad in ("mock", "fallback", "模拟", "mock-notice"):
+    if bad in full_answer:
+        raise SystemExit(f"answer contains forbidden fallback indicator: {bad}")
+PY
+
+echo "RAG stream assertions passed."
+
+# ============================================================
+# Agent 模式流式问答
+# ============================================================
+echo "Testing Agent stream..."
+
+agent_session_json="$(curl -fsS -X POST "$BACKEND_URL/api/chat/session" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $token" \
+  -d "{\"kbId\":$kb_id,\"title\":\"Agent Smoke Chat\"}")"
+agent_session_id="$(json_get "$agent_session_json" "data.id")"
+echo "Created agent session: $agent_session_id"
+
+agent_stream_file="$(mktemp /tmp/knowflow-agent-stream-XXXXXX.txt)"
+trap 'rm -f "$tmpfile" "$stream_file" "$agent_stream_file"' EXIT
+curl -fsS -N --max-time 30 -X POST "$BACKEND_URL/api/agent/ask/stream" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $token" \
+  -d "{\"kbId\":$kb_id,\"sessionId\":$agent_session_id,\"question\":\"$QUESTION\"}" \
+  > "$agent_stream_file"
+
+if ! grep -q '^event:done' "$agent_stream_file"; then
+  echo "agent stream did not finish with done event" >&2
+  cat "$agent_stream_file" >&2
+  exit 1
+fi
+
+if ! grep -q '^event:token' "$agent_stream_file"; then
+  echo "agent stream did not include token events" >&2
+  cat "$agent_stream_file" >&2
+  exit 1
+fi
+
+if ! grep -q '^event:sources' "$agent_stream_file"; then
+  echo "agent stream did not include sources event" >&2
+  cat "$agent_stream_file" >&2
+  exit 1
+fi
+
+if ! grep -q '^event:meta' "$agent_stream_file"; then
+  echo "agent stream did not include meta event" >&2
+  cat "$agent_stream_file" >&2
+  exit 1
+fi
+
+python3 - "$agent_stream_file" <<'PY'
+import json
+import sys
+
+path = sys.argv[1]
+events = []
+event = "message"
+data_lines = []
+for raw in open(path, encoding="utf-8"):
+    line = raw.rstrip("\n")
+    if not line:
+        if data_lines:
+            events.append((event, "\n".join(data_lines)))
+        event = "message"
+        data_lines = []
+        continue
+    if line.startswith("event:"):
+        event = line.split(":", 1)[1].strip()
+    elif line.startswith("data:"):
+        data_lines.append(line.split(":", 1)[1].strip())
+
+# 验证 meta 事件包含 confidence / trace
+meta_payloads = [json.loads(data) for name, data in events if name == "meta"]
+if not meta_payloads:
+    raise SystemExit("missing agent meta payload")
+
+meta = meta_payloads[-1]
+confidence = meta.get("confidence")
+if confidence is None:
+    raise SystemExit("meta missing confidence")
+if not isinstance(confidence, (int, float)):
+    raise SystemExit(f"confidence is not numeric: {type(confidence).__name__}")
+if not (0.0 <= float(confidence) <= 1.0):
+    raise SystemExit(f"confidence out of range: {confidence}")
+
+trace = meta.get("trace")
+if not trace or not isinstance(trace, list) or len(trace) == 0:
+    raise SystemExit("meta missing trace steps")
+seen_steps = set()
+for step in trace:
+    if not isinstance(step, dict):
+        raise SystemExit(f"trace step is not dict: {step}")
+    if "step" not in step or "detail" not in step:
+        raise SystemExit(f"trace step missing step/detail: {step}")
+    seen_steps.add(step.get("step"))
+required_steps = {"router", "retriever", "answer", "citation_guard"}
+missing_steps = sorted(required_steps - seen_steps)
+if missing_steps:
+    raise SystemExit(f"agent trace missing required steps: {missing_steps}")
+
+# 验证 sources
+sources_payloads = [json.loads(data) for name, data in events if name == "sources"]
+if not sources_payloads:
+    raise SystemExit("agent missing sources payload")
+
+sources = sources_payloads[-1]
+if isinstance(sources, dict):
+    sources = sources.get("sources", [])
+if not sources:
+    raise SystemExit("agent sources payload is empty")
+for source in sources:
+    if source.get("fileName") == "mock-notice.txt":
+        raise SystemExit("agent sources contain mock-notice.txt")
+    for key in ("chunkId", "documentId", "fileName", "content"):
+        if source.get(key) in (None, "", 0):
+            raise SystemExit(f"agent source missing real {key}: {source}")
+
+# 验证 fallback 未启用
+all_answers = []
+for name, data in events:
+    if name in ("token", "done"):
+        try:
+            payload = json.loads(data)
+            content = payload.get("content") or payload.get("answer") or ""
+            if isinstance(content, str):
+                all_answers.append(content)
+        except (json.JSONDecodeError, TypeError):
+            pass
+full_answer = " ".join(all_answers).lower()
+for bad in ("mock", "fallback", "模拟", "mock-notice"):
+    if bad in full_answer:
+        raise SystemExit(f"agent answer contains forbidden fallback indicator: {bad}")
 PY
 
 echo "Smoke test passed."
