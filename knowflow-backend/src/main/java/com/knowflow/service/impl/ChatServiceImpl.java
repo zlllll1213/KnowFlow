@@ -1,9 +1,13 @@
 package com.knowflow.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.knowflow.common.BusinessException;
+import com.knowflow.common.PageResult;
+import com.knowflow.dto.AgentResponse;
+import com.knowflow.dto.AgentTraceStep;
 import com.knowflow.dto.ChatAskRequest;
 import com.knowflow.dto.ChatSessionCreateRequest;
 import com.knowflow.dto.RagResponse;
@@ -27,6 +31,9 @@ import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
+import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.Map;
 
 @Slf4j
 @Service
@@ -52,14 +59,15 @@ public class ChatServiceImpl implements ChatService {
     }
 
     @Override
-    public List<ChatSession> listSessions(Long userId, Long kbId) {
+    public PageResult<ChatSession> listSessions(Long userId, Long kbId, long page, long size) {
         checkKbOwnership(userId, kbId);
 
-        return sessionMapper.selectList(
+        Page<ChatSession> result = sessionMapper.selectPage(new Page<>(page, size),
                 new LambdaQueryWrapper<ChatSession>()
                         .eq(ChatSession::getKbId, kbId)
                         .eq(ChatSession::getUserId, userId)
                         .orderByDesc(ChatSession::getUpdatedAt));
+        return PageResult.of(result.getTotal(), result.getCurrent(), result.getSize(), result.getRecords());
     }
 
     @Override
@@ -69,7 +77,7 @@ public class ChatServiceImpl implements ChatService {
         ChatSession session = checkSessionOwnership(userId, request.getSessionId(), request.getKbId());
         saveMessage(userId, request.getSessionId(), request.getKbId(), "user", request.getQuestion(), Collections.emptyList());
 
-        // 调用 Go RAG Service（不可用时自动降级 mock）
+        // 调用 Go RAG Service；默认 fail-closed，只有显式开发配置才启用 mock。
         RagResponse ragResponse = ragClient.ask(request.getKbId(), request.getQuestion(), 5);
         String answer = ragResponse.getAnswer();
         List<RagSourceChunk> sources = ragResponse.getSources() == null
@@ -80,7 +88,7 @@ public class ChatServiceImpl implements ChatService {
         ChatMessage assistantMsg = saveMessage(userId, request.getSessionId(), request.getKbId(), "assistant", answer, sources);
 
         // 更新会话时间
-        sessionMapper.updateById(session);
+        touchSession(session);
 
         return ChatMessageVO.builder()
                 .id(assistantMsg.getId())
@@ -98,6 +106,9 @@ public class ChatServiceImpl implements ChatService {
         saveMessage(userId, request.getSessionId(), request.getKbId(), "user", request.getQuestion(), Collections.emptyList());
 
         SseEmitter emitter = new SseEmitter(120_000L);
+        emitter.onTimeout(() -> log.warn("流式问答超时: userId={}, sessionId={}", userId, request.getSessionId()));
+        emitter.onError(e -> log.warn("流式问答连接异常: userId={}, sessionId={}, error={}",
+                userId, request.getSessionId(), e.getMessage()));
         CompletableFuture.runAsync(() -> {
             StringBuilder answer = new StringBuilder();
             ListHolder sourcesHolder = new ListHolder();
@@ -110,7 +121,9 @@ public class ChatServiceImpl implements ChatService {
                         return;
                     }
                     answer.append(token);
-                    sendSse(emitter, "token", Collections.singletonMap("content", token));
+                    if (!sendSse(emitter, "token", Collections.singletonMap("content", token))) {
+                        completed.set(true);
+                    }
                 }
 
                 @Override
@@ -132,9 +145,14 @@ public class ChatServiceImpl implements ChatService {
                     if (!completed.compareAndSet(false, true)) {
                         return;
                     }
+                    if (answer.isEmpty()) {
+                        sendSse(emitter, "error", Collections.singletonMap("message", "RAG 服务未返回回答"));
+                        emitter.complete();
+                        return;
+                    }
                     ChatMessage assistantMsg = saveMessage(userId, request.getSessionId(), request.getKbId(),
                             "assistant", answer.toString(), sourcesHolder.sources);
-                    sessionMapper.updateById(session);
+                    touchSession(session);
                     sendSse(emitter, "done", ChatMessageVO.builder()
                             .id(assistantMsg.getId())
                             .role(assistantMsg.getRole())
@@ -155,18 +173,108 @@ public class ChatServiceImpl implements ChatService {
     }
 
     @Override
-    public List<ChatMessageVO> getHistory(Long userId, Long sessionId) {
+    public AgentResponse askAgent(Long userId, ChatAskRequest request) {
+        checkKbOwnership(userId, request.getKbId());
+        ChatSession session = checkSessionOwnership(userId, request.getSessionId(), request.getKbId());
+        saveMessage(userId, request.getSessionId(), request.getKbId(), "user", request.getQuestion(), Collections.emptyList());
+
+        AgentResponse response = ragClient.askAgent(request.getKbId(), request.getQuestion(), 5);
+        List<RagSourceChunk> sources = response.getSources() == null ? Collections.emptyList() : response.getSources();
+        saveMessage(userId, request.getSessionId(), request.getKbId(), "assistant", response.getAnswer(), sources);
+        touchSession(session);
+        response.setSources(sources);
+        return response;
+    }
+
+    @Override
+    public SseEmitter askAgentStream(Long userId, ChatAskRequest request) {
+        checkKbOwnership(userId, request.getKbId());
+        ChatSession session = checkSessionOwnership(userId, request.getSessionId(), request.getKbId());
+        saveMessage(userId, request.getSessionId(), request.getKbId(), "user", request.getQuestion(), Collections.emptyList());
+
+        SseEmitter emitter = new SseEmitter(120_000L);
+        CompletableFuture.runAsync(() -> {
+            StringBuilder answer = new StringBuilder();
+            ListHolder sourcesHolder = new ListHolder();
+            AgentMetaHolder meta = new AgentMetaHolder();
+            AtomicBoolean completed = new AtomicBoolean(false);
+
+            ragClient.askAgentStream(request.getKbId(), request.getQuestion(), 5, new RagClient.StreamListener() {
+                @Override
+                public void onToken(String token) {
+                    if (token == null || token.isEmpty()) {
+                        return;
+                    }
+                    answer.append(token);
+                    if (!sendSse(emitter, "token", Collections.singletonMap("content", token))) {
+                        completed.set(true);
+                    }
+                }
+
+                @Override
+                public void onSources(List<RagSourceChunk> sources) {
+                    sourcesHolder.sources = sources == null ? Collections.emptyList() : sources;
+                    sendSse(emitter, "sources", sourcesHolder.sources);
+                }
+
+                @Override
+                public void onMeta(Map<String, Object> metaEvent) {
+                    meta.intent = String.valueOf(metaEvent.getOrDefault("intent", "qa"));
+                    Object confidence = metaEvent.get("confidence");
+                    if (confidence instanceof Number number) {
+                        meta.confidence = number.doubleValue();
+                    }
+                    Object trace = metaEvent.get("trace");
+                    if (trace != null) {
+                        meta.trace = objectMapper.convertValue(trace,
+                                objectMapper.getTypeFactory().constructCollectionType(List.class, AgentTraceStep.class));
+                    }
+                    sendSse(emitter, "meta", metaEvent);
+                }
+
+                @Override
+                public void onError(String message) {
+                    if (completed.compareAndSet(false, true)) {
+                        sendSse(emitter, "error", Collections.singletonMap("message", message));
+                        emitter.complete();
+                    }
+                }
+
+                @Override
+                public void onDone() {
+                    if (!completed.compareAndSet(false, true)) {
+                        return;
+                    }
+                    saveMessage(userId, request.getSessionId(), request.getKbId(), "assistant",
+                            answer.toString(), sourcesHolder.sources);
+                    touchSession(session);
+                    sendSse(emitter, "done", new AgentResponse(meta.intent, answer.toString(),
+                            sourcesHolder.sources, meta.confidence, meta.trace));
+                    emitter.complete();
+                }
+            });
+        }).exceptionally(e -> {
+            log.warn("Agent 流式问答失败", e);
+            sendSse(emitter, "error", Collections.singletonMap("message", "Agent 问答失败"));
+            emitter.complete();
+            return null;
+        });
+        return emitter;
+    }
+
+    @Override
+    public PageResult<ChatMessageVO> getHistory(Long userId, Long sessionId, long page, long size) {
         ChatSession session = sessionMapper.selectById(sessionId);
         if (session == null || !session.getUserId().equals(userId)) {
             throw new BusinessException(40030, "无权访问该会话");
         }
 
-        List<ChatMessage> messages = messageMapper.selectList(
+        Page<ChatMessage> result = messageMapper.selectPage(new Page<>(page, size),
                 new LambdaQueryWrapper<ChatMessage>()
                         .eq(ChatMessage::getSessionId, sessionId)
                         .orderByAsc(ChatMessage::getCreatedAt));
 
-        return messages.stream()
+        List<ChatMessageVO> records = result.getRecords().stream()
                 .map(m -> ChatMessageVO.builder()
                         .id(m.getId())
                         .role(m.getRole())
@@ -175,6 +283,7 @@ public class ChatServiceImpl implements ChatService {
                         .createdAt(m.getCreatedAt())
                         .build())
                 .collect(Collectors.toList());
+        return PageResult.of(result.getTotal(), result.getCurrent(), result.getSize(), records);
     }
 
     // ---------- 序列化辅助 ----------
@@ -240,15 +349,28 @@ public class ChatServiceImpl implements ChatService {
         return msg;
     }
 
-    private void sendSse(SseEmitter emitter, String event, Object data) {
+    private boolean sendSse(SseEmitter emitter, String event, Object data) {
         try {
             emitter.send(SseEmitter.event().name(event).data(data));
+            return true;
         } catch (Exception e) {
-            throw new RuntimeException(e);
+            log.warn("SSE 发送失败: event={}, error={}", event, e.getMessage());
+            return false;
         }
+    }
+
+    private void touchSession(ChatSession session) {
+        session.setUpdatedAt(LocalDateTime.now());
+        sessionMapper.updateById(session);
     }
 
     private static class ListHolder {
         private List<RagSourceChunk> sources = Collections.emptyList();
+    }
+
+    private static class AgentMetaHolder {
+        private String intent = "qa";
+        private double confidence = 0.0;
+        private List<AgentTraceStep> trace = new ArrayList<>();
     }
 }

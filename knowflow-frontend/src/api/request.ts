@@ -1,4 +1,5 @@
 import axios from 'axios'
+import router from '@/router'
 import { getToken, removeToken } from '@/utils/token'
 
 export interface Result<T = unknown> {
@@ -14,8 +15,9 @@ const request = axios.create({
 
 function redirectToLogin() {
   removeToken()
-  if (!['/login', '/register'].includes(window.location.pathname)) {
-    window.location.href = '/login'
+  const current = router.currentRoute.value
+  if (!['/login', '/register'].includes(current.path)) {
+    router.replace({ path: '/login', query: { redirect: current.fullPath } })
   }
 }
 

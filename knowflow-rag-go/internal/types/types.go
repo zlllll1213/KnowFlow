@@ -23,3 +23,16 @@ type RagResponse struct {
 	Sources   []SourceChunk `json:"sources"`
 	LatencyMs int64         `json:"latencyMs"`
 }
+
+type AgentTraceStep struct {
+	Step   string `json:"step"`
+	Detail string `json:"detail"`
+}
+
+type AgentResponse struct {
+	Intent     string           `json:"intent"`
+	Answer     string           `json:"answer"`
+	Sources    []SourceChunk    `json:"sources"`
+	Confidence float64          `json:"confidence"`
+	Trace      []AgentTraceStep `json:"trace"`
+}

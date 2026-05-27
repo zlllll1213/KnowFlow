@@ -1,6 +1,8 @@
 package com.knowflow.controller;
 
+import com.knowflow.common.PageResult;
 import com.knowflow.common.Result;
+import com.knowflow.dto.PageRequest;
 import com.knowflow.security.LoginUser;
 import com.knowflow.service.DocumentService;
 import com.knowflow.vo.DocumentVO;
@@ -8,8 +10,6 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
-
-import java.util.List;
 
 @RestController
 @RequestMapping("/api/document")
@@ -29,9 +29,12 @@ public class DocumentController {
 
     /** 文档列表 */
     @GetMapping("/list")
-    public Result<List<DocumentVO>> list(@AuthenticationPrincipal LoginUser loginUser,
-                                         @RequestParam Long kbId) {
-        List<DocumentVO> list = documentService.listByKb(loginUser.getUserId(), kbId);
+    public Result<PageResult<DocumentVO>> list(@AuthenticationPrincipal LoginUser loginUser,
+                                               @RequestParam Long kbId,
+                                               @RequestParam(required = false) Long page,
+                                               @RequestParam(required = false) Long size) {
+        PageResult<DocumentVO> list = documentService.listByKb(loginUser.getUserId(), kbId,
+                PageRequest.normalizePage(page), PageRequest.normalizeSize(size));
         return Result.success(list);
     }
 

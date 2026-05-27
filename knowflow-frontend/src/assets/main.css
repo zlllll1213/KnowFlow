@@ -48,8 +48,8 @@ h1, h2, h3, h4, h5, h6 { font-family: var(--font-heading); font-weight: 600; }
   padding: 3px 10px; border-radius: 20px; font-size: 12px; font-weight: 500;
 }
 .status-badge.uploaded { background: #f1f5f9; color: #475569; }
-.status-badge.parsing  { background: #fef9c3; color: #854d0e; }
-.status-badge.embedding { background: #dbeafe; color: #1e40af; }
+.status-badge.parsing  { background: #dbeafe; color: #1d4ed8; }
+.status-badge.embedding { background: #ede9fe; color: #6d28d9; }
 .status-badge.done     { background: #d1fae5; color: #065f46; }
 .status-badge.failed   { background: #fee2e2; color: #991b1b; }
 

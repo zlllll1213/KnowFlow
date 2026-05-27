@@ -42,6 +42,9 @@ storage:
 knowflow:
   rag:
     base-url: ${KNOWFLOW_RAG_BASE_URL:http://localhost:8090}
+    connect-timeout-ms: ${KNOWFLOW_RAG_CONNECT_TIMEOUT_MS:3000}
+    read-timeout-ms: ${KNOWFLOW_RAG_READ_TIMEOUT_MS:120000}
+    mock-fallback-enabled: ${KNOWFLOW_RAG_MOCK_FALLBACK_ENABLED:false}
 
 # 详细日志
 logging:

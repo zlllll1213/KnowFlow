@@ -2,6 +2,8 @@ package com.knowflow.util;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.knowflow.common.BusinessException;
+import com.knowflow.dto.AgentResponse;
 import com.knowflow.dto.RagResponse;
 import com.knowflow.dto.RagSourceChunk;
 import lombok.extern.slf4j.Slf4j;
@@ -10,6 +12,7 @@ import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
 
@@ -23,7 +26,6 @@ import java.util.Objects;
 
 /**
  * Go RAG Service HTTP 客户端。
- * 当 Go 服务不可用时，自动降级为 mock 回答。
  */
 @Slf4j
 @Component
@@ -32,50 +34,87 @@ public class RagClient {
     private final RestTemplate restTemplate;
     private final String baseUrl;
     private final ObjectMapper objectMapper;
+    private final boolean mockFallbackEnabled;
 
     public RagClient(
             @Value("${knowflow.rag.base-url:http://localhost:8090}") String baseUrl,
+            @Value("${knowflow.rag.connect-timeout-ms:3000}") int connectTimeoutMs,
+            @Value("${knowflow.rag.read-timeout-ms:120000}") int readTimeoutMs,
+            @Value("${knowflow.rag.mock-fallback-enabled:false}") boolean mockFallbackEnabled,
             ObjectMapper objectMapper) {
         this.baseUrl = baseUrl;
         this.objectMapper = objectMapper;
-        this.restTemplate = new RestTemplate();
+        this.mockFallbackEnabled = mockFallbackEnabled;
+        SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
+        requestFactory.setConnectTimeout(connectTimeoutMs);
+        requestFactory.setReadTimeout(readTimeoutMs);
+        this.restTemplate = new RestTemplate(requestFactory);
     }
 
     /**
      * 调用 Go RAG Service 同步问答。
-     * 失败时降级为 mock 回答。
      */
     public RagResponse ask(Long kbId, String question, int topK) {
-        try {
-            Map<String, Object> body = Map.of(
-                    "kbId", kbId,
-                    "question", question,
-                    "topK", topK
-            );
+        Map<String, Object> body = Map.of(
+                "kbId", kbId,
+                "question", question,
+                "topK", topK
+        );
+        return postRag("/rag/ask", body, RagResponse.class, kbId, question);
+    }
 
+    public AgentResponse askAgent(Long kbId, String question, int topK) {
+        Map<String, Object> body = Map.of(
+                "kbId", kbId,
+                "question", question,
+                "topK", topK
+        );
+        return postRag("/agent/ask", body, AgentResponse.class, kbId, question);
+    }
+
+    private <T> T postRag(String path, Map<String, Object> body, Class<T> responseType, Long kbId, String question) {
+        try {
             HttpHeaders headers = new HttpHeaders();
             headers.setContentType(MediaType.APPLICATION_JSON);
             HttpEntity<Map<String, Object>> request = new HttpEntity<>(body, headers);
 
-            RagResponse response = restTemplate.postForObject(
-                    baseUrl + "/rag/ask", request, RagResponse.class);
+            T response = restTemplate.postForObject(baseUrl + path, request, responseType);
 
             if (response != null) {
-                if (response.getSources() == null) {
-                    response.setSources(Collections.emptyList());
+                if (response instanceof RagResponse ragResponse) {
+                    if (ragResponse.getSources() == null) {
+                        ragResponse.setSources(Collections.emptyList());
+                    }
+                    log.info("RAG 问答完成: kbId={}, sources={}, latencyMs={}",
+                            kbId, ragResponse.getSources().size(), ragResponse.getLatencyMs());
+                } else if (response instanceof AgentResponse agentResponse) {
+                    if (agentResponse.getSources() == null) {
+                        agentResponse.setSources(Collections.emptyList());
+                    }
+                    log.info("Agent 问答完成: kbId={}, intent={}, sources={}, confidence={}",
+                            kbId, agentResponse.getIntent(), agentResponse.getSources().size(), agentResponse.getConfidence());
                 }
-                log.info("RAG 问答完成: kbId={}, sources={}, latencyMs={}",
-                        kbId, response.getSources().size(), response.getLatencyMs());
                 return response;
             }
         } catch (RestClientException e) {
-            log.warn("Go RAG Service 不可用 ({}), 降级为 mock", e.getMessage());
+            log.warn("Go RAG Service 调用失败: path={}, kbId={}, error={}", path, kbId, e.getMessage());
+            if (mockFallbackEnabled && responseType == RagResponse.class) {
+                return responseType.cast(mockResponse(kbId, question));
+            }
         }
 
-        return mockResponse(kbId, question);
+        throw new BusinessException(50301, "RAG 服务暂不可用，请稍后重试");
     }
 
     public void askStream(Long kbId, String question, int topK, StreamListener listener) {
+        stream("/rag/ask/stream", kbId, question, topK, listener);
+    }
+
+    public void askAgentStream(Long kbId, String question, int topK, StreamListener listener) {
+        stream("/agent/ask/stream", kbId, question, topK, listener);
+    }
+
+    private void stream(String path, Long kbId, String question, int topK, StreamListener listener) {
         try {
             Map<String, Object> body = Map.of(
                     "kbId", kbId,
@@ -87,7 +126,7 @@ public class RagClient {
             headers.setContentType(MediaType.APPLICATION_JSON);
             HttpEntity<Map<String, Object>> request = new HttpEntity<>(body, headers);
 
-            restTemplate.execute(baseUrl + "/rag/ask/stream", org.springframework.http.HttpMethod.POST,
+            restTemplate.execute(baseUrl + path, org.springframework.http.HttpMethod.POST,
                     clientHttpRequest -> {
                         clientHttpRequest.getHeaders().putAll(request.getHeaders());
                         objectMapper.writeValue(clientHttpRequest.getBody(), body);
@@ -106,11 +145,15 @@ public class RagClient {
                         return null;
                     });
         } catch (Exception e) {
-            log.warn("Go RAG Service 流式接口不可用 ({}), 降级为 mock", e.getMessage());
-            RagResponse fallback = mockResponse(kbId, question);
-            listener.onToken(fallback.getAnswer());
-            listener.onSources(fallback.getSources());
-            listener.onDone();
+            log.warn("Go RAG Service 流式接口调用失败: path={}, kbId={}, error={}", path, kbId, e.getMessage());
+            if (mockFallbackEnabled && path.startsWith("/rag/")) {
+                RagResponse fallback = mockResponse(kbId, question);
+                listener.onToken(fallback.getAnswer());
+                listener.onSources(Collections.emptyList());
+                listener.onDone();
+                return;
+            }
+            listener.onError("RAG 服务暂不可用，请稍后重试");
         }
     }
 
@@ -135,6 +178,7 @@ public class RagClient {
         String type = Objects.toString(event.get("type"), "");
         switch (type) {
             case "token" -> listener.onToken(Objects.toString(event.get("content"), ""));
+            case "answer" -> listener.onToken(Objects.toString(event.get("content"), Objects.toString(event.get("answer"), "")));
             case "sources" -> {
                 Object rawSources = event.get("sources");
                 List<RagSourceChunk> sources = rawSources == null
@@ -144,6 +188,7 @@ public class RagClient {
                 listener.onSources(sources);
             }
             case "error" -> listener.onError(Objects.toString(event.get("message"), "RAG 流式问答失败"));
+            case "meta" -> listener.onMeta(event);
             case "done" -> listener.onDone();
             default -> {
             }
@@ -157,23 +202,20 @@ public class RagClient {
 
         void onError(String message);
 
+        default void onMeta(Map<String, Object> meta) {
+        }
+
         void onDone();
     }
 
-    // ---------- mock 降级 ----------
+    // ---------- 显式开发 mock ----------
 
     private RagResponse mockResponse(Long kbId, String question) {
-        RagSourceChunk mockSource = new RagSourceChunk(
-                0L, 0L, "mock-notice.txt", 0,
-                "[MOCK] 当前为模拟数据。请确保 Go RAG Service 已启动，"
-                        + "且知识库中已有已解析的文档切片。",
-                0.0);
-
         RagResponse resp = new RagResponse();
         resp.setAnswer("这是基于知识库 [ID=" + kbId + "] 的模拟回答。您的问题是：「" + question + "」。"
-                + "\n\n⚠️ 提示：当前 Go RAG Service 不可用，返回了 mock 数据。"
+                + "\n\n提示：当前启用了开发 mock fallback。"
                 + "请启动 Go RAG Service 以获取真实回答。");
-        resp.setSources(Collections.singletonList(mockSource));
+        resp.setSources(Collections.emptyList());
         resp.setLatencyMs(0L);
         return resp;
     }

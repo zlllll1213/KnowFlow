@@ -29,9 +29,21 @@
         </el-table-column>
         <el-table-column prop="status" label="状态" width="120">
           <template #default="{ row }">
-            <span :class="['status-badge', row.status.toLowerCase()]">{{ statusLabel[row.status] }}</span>
+            <div class="status-cell">
+              <el-tooltip v-if="row.status === 'FAILED' && row.errorMessage" :content="row.errorMessage">
+                <span :class="['status-badge', row.status.toLowerCase()]">
+                  <el-icon :class="{ spin: isProcessing(row.status) }"><component :is="statusIcon[row.status]" /></el-icon>
+                  {{ statusLabel[row.status] }}
+                </span>
+              </el-tooltip>
+              <span v-else :class="['status-badge', row.status.toLowerCase()]">
+                <el-icon :class="{ spin: isProcessing(row.status) }"><component :is="statusIcon[row.status]" /></el-icon>
+                {{ statusLabel[row.status] }}
+              </span>
+            </div>
           </template>
         </el-table-column>
+        <el-table-column prop="chunkCount" label="切片" width="80" />
         <el-table-column prop="createdAt" label="上传时间" width="150">
           <template #default="{ row }">{{ formatDate(row.createdAt) }}</template>
         </el-table-column>
@@ -40,12 +52,22 @@
             <el-button size="small" text type="danger" @click="handleDelete(row)">删除</el-button>
           </template>
         </el-table-column>
-      </el-table>
-    </div>
+	      </el-table>
+	      <el-pagination
+	        v-if="total > pageSize"
+	        class="pager"
+	        layout="prev, pager, next"
+	        :current-page="page"
+	        :page-size="pageSize"
+	        :total="total"
+	        @current-change="handlePageChange"
+	      />
+	    </div>
 
     <el-dialog v-model="uploadVisible" title="上传文档" width="520px">
       <DocumentUpload @files="handleUpload" />
       <div v-if="uploading" class="upload-progress">
+        <div class="progress-label">正在上传 {{ currentFile }}…</div>
         <el-progress :percentage="uploadProgress" />
       </div>
     </el-dialog>
@@ -53,7 +75,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus/es/components/message/index.mjs'
 import { ElMessageBox } from 'element-plus/es/components/message-box/index.mjs'
@@ -70,40 +92,93 @@ const kbId = Number(route.params.id)
 const kb = ref<KbVO | null>(null)
 const docs = ref<DocumentVO[]>([])
 const loading = ref(false)
+const page = ref(1)
+const pageSize = ref(20)
+const total = ref(0)
 const uploadVisible = ref(false)
 const uploading = ref(false)
 const uploadProgress = ref(0)
+const currentFile = ref('')
 
 const statusLabel: Record<string, string> = {
   UPLOADED: '已上传', PARSING: '解析中', EMBEDDING: '向量化', DONE: '已完成', FAILED: '失败',
+}
+const statusIcon: Record<string, string> = {
+  UPLOADED: 'Clock', PARSING: 'Loading', EMBEDDING: 'Loading', DONE: 'Check', FAILED: 'WarningFilled',
+}
+
+function isProcessing(status: string) {
+  return status === 'PARSING' || status === 'EMBEDDING'
 }
 
 async function loadData() {
   loading.value = true
   try {
-    [kb.value, docs.value] = await Promise.all([getKbDetail(kbId), getDocumentList(kbId)])
+    const [kbDetail, docPage] = await Promise.all([getKbDetail(kbId), getDocumentList(kbId, page.value, pageSize.value)])
+    kb.value = kbDetail
+    docs.value = docPage.records
+    total.value = docPage.total
+    syncPolling()
   } catch {} finally { loading.value = false }
 }
 
 async function loadDocs() {
   loading.value = true
-  try { docs.value = await getDocumentList(kbId) } catch {} finally { loading.value = false }
+  try {
+    const result = await getDocumentList(kbId, page.value, pageSize.value)
+    docs.value = result.records
+    total.value = result.total
+    syncPolling()
+  } catch {} finally { loading.value = false }
 }
 
 onMounted(loadData)
+let pollTimer: number | undefined
+onBeforeUnmount(() => {
+  stopPolling()
+})
 
 async function handleUpload(files: File[]) {
   uploading.value = true
   uploadProgress.value = 0
   for (let i = 0; i < files.length; i++) {
+    currentFile.value = files[i].name
     try {
-      await uploadDocument(kbId, files[i])
+      await uploadDocument(kbId, files[i], (percent) => {
+        uploadProgress.value = Math.min(99, Math.round(((i + percent / 100) / files.length) * 100))
+      })
       uploadProgress.value = Math.round((i + 1) / files.length * 100)
     } catch (e: any) { ElMessage.error(`${files[i].name} 上传失败: ${e.message}`) }
   }
   uploading.value = false
   uploadVisible.value = false
   ElMessage.success('上传完成')
+  await loadDocs()
+}
+
+function hasProcessingDocs() {
+  return docs.value.some(d => ['UPLOADED', 'PARSING', 'EMBEDDING'].includes(d.status))
+}
+
+function syncPolling() {
+  if (!hasProcessingDocs()) {
+    stopPolling()
+    return
+  }
+  if (pollTimer) return
+  pollTimer = window.setInterval(async () => {
+    await loadDocs()
+  }, 3000)
+}
+
+function stopPolling() {
+  if (!pollTimer) return
+  window.clearInterval(pollTimer)
+  pollTimer = undefined
+}
+
+function handlePageChange(nextPage: number) {
+  page.value = nextPage
   loadDocs()
 }
 
@@ -134,10 +209,15 @@ function formatDate(d: string) {
 .back-link:hover { color: var(--color-accent); }
 .header-actions { display: flex; gap: 10px; }
 .table-card { padding: 0; overflow: hidden; }
+.pager { padding: 14px 16px; justify-content: center; }
 .table-toolbar { display: flex; align-items: center; justify-content: space-between; padding: 16px 20px; border-bottom: 1px solid var(--color-border); }
 .table-title { font-size: 14px; font-weight: 600; color: var(--color-text-primary); }
 .type-badge { background: var(--color-bg); border: 1px solid var(--color-border); border-radius: 4px; padding: 2px 6px; font-size: 11px; font-weight: 600; color: var(--color-text-secondary); }
+.status-cell { display: flex; align-items: center; gap: 6px; }
+.spin { animation: spin 1s linear infinite; }
 .upload-progress { margin-top: 16px; }
+.progress-label { font-size: 13px; color: var(--color-text-secondary); margin-bottom: 8px; }
+@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 
 @media (max-width: 768px) {
   .header-actions {

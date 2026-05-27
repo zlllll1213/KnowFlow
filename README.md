@@ -2,7 +2,7 @@
 
 > 基于 RAG（Retrieval-Augmented Generation）的智能知识库问答平台
 
-用户可以注册登录、创建知识库、上传文档、追踪文档解析进度，并在指定知识库中进行 AI 驱动的智能问答。
+用户可以注册登录、创建知识库、上传文档、追踪文档解析进度，并在指定知识库中进行 AI 驱动的智能问答。当前版本补齐了多服务 Docker 部署、真实 sources 校验、Dashboard 统计和轻量 Agent 工作流。
 
 ---
 
@@ -15,7 +15,7 @@
                            │ REST + SSE
 ┌──────────────────────────▼───────────────────────────────────┐
 │  Spring Boot 3  (Port 8081)                                  │
-│  JWT Auth · MyBatis-Plus · 业务编排 · 调用 Go RAG            │
+│  JWT Auth · MyBatis-Plus · 业务编排 · RAG/Agent API          │
 └──────┬──────────────┬────────────────┬──────────────────────┘
        │              │                │
 ┌──────▼──────┐ ┌─────▼──────┐ ┌──────▼──────┐
@@ -27,7 +27,7 @@
 │ Python      │ │ Go RAG     │        │
 │ Worker      │ │ Service    │        │
 │ 解析·切片·   │ │ 检索·生成·  │        │
-│ embedding   │ │ SSE 流式   │        │
+│ embedding   │ │ Agent·SSE  │        │
 └─────────────┘ └────────────┘        │
        │                              │
        └──────────────────────────────┘
@@ -44,9 +44,11 @@ KnowFlow/
 │   ├── sql/init.sql            # 数据库初始化（含 pgvector）
 │   ├── docker-compose.yml      # PostgreSQL + Redis + MinIO
 │   ├── API.md                  # 完整接口文档
+│   ├── Dockerfile
 │   └── pom.xml
 ├── knowflow-frontend/          # Vue 3 前端
 │   ├── src/
+│   ├── Dockerfile
 │   └── package.json
 ├── knowflow-worker-python/     # Python 文档解析 Worker
 │   ├── app/                    # 队列消费 · 解析 · 切片 · embedding
@@ -55,11 +57,14 @@ KnowFlow/
 ├── knowflow-rag-go/            # Go RAG 检索与生成服务
 │   ├── cmd/rag-server/
 │   ├── internal/               # handler · service · retriever · llm · prompt
+│   ├── Dockerfile
 │   └── go.mod
 ├── scripts/
 │   ├── dev-infra-up.sh         # 启动 Docker 基础设施并执行本地迁移
 │   ├── dev-migrate-db.sh       # 对旧本地数据库补齐兼容字段/索引
-│   └── smoke-e2e.sh            # 上传 → 解析 → 检索 → SSE 问答链路检查
+│   ├── smoke-e2e.sh            # 上传 → 解析 → 检索 → SSE 问答链路检查
+│   └── seed-demo-data.sh       # Demo 数据
+├── docker-compose.yml          # 完整多服务本地部署
 ├── .env.example                # 全局环境变量模板
 ├── docs/
 │   └── OPTIMIZATION_PLAN.md    # 完整优化规划文档
@@ -87,7 +92,15 @@ KnowFlow/
 
 - JDK 17+ · Node.js 18+ · Go 1.21+ · Python 3.10+ · Docker & Docker Compose
 
-### 1. 启动基础设施
+### 1. 一键启动完整链路
+
+```bash
+docker compose up --build
+```
+
+这会启动 PostgreSQL 16 + pgvector、Redis、MinIO、MinIO bucket 初始化、Spring Boot、Go RAG、Python Worker 和 Vue Preview。
+
+### 2. 或手动启动基础设施
 
 ```bash
 cd knowflow-backend
@@ -111,7 +124,7 @@ cd ..
 
 它会启动 Docker 基础设施并自动执行本地兼容迁移。
 
-### 2. 启动后端
+### 3. 启动后端
 
 ```bash
 cd knowflow-backend
@@ -120,7 +133,7 @@ mvn spring-boot:run
 # → Swagger UI: http://localhost:8081/swagger-ui.html
 ```
 
-### 3. 启动前端
+### 4. 启动前端
 
 ```bash
 cd knowflow-frontend
@@ -128,15 +141,15 @@ npm install && npm run dev
 # → http://localhost:5173
 ```
 
-### 4. 启动 Python Worker（可选）
+### 5. 启动 Python Worker（完整 RAG 闭环必需）
 
 ```bash
 cd knowflow-worker-python
 pip install -r requirements.txt
-python -m app.main
+python3 -m app.main
 ```
 
-### 5. 启动 Go RAG Service（可选）
+### 6. 启动 Go RAG Service（完整 RAG 闭环必需）
 
 ```bash
 cd knowflow-rag-go
@@ -168,6 +181,8 @@ go mod tidy && go run cmd/rag-server/main.go
 | POST | `/api/chat/ask` | 智能问答（返回 answer + sources） | ✓ |
 | POST | `/api/chat/ask/stream` | SSE 流式智能问答 | ✓ |
 | GET | `/api/chat/history?sessionId=` | 聊天历史 | ✓ |
+| POST | `/api/agent/ask` | Agent 模式问答 | ✓ |
+| POST | `/api/agent/ask/stream` | Agent SSE 流式问答 | ✓ |
 | GET | `/api/health` | 后端依赖健康检查 | |
 
 完整接口文档见 [knowflow-backend/API.md](knowflow-backend/API.md)。
@@ -212,7 +227,7 @@ curl http://localhost:8090/health
 
 # Python Worker 配置检查
 cd knowflow-worker-python
-python -m app.main --check
+python3 -m app.main --check
 ```
 
 服务全部启动后，可以跑一条真实链路：
@@ -221,7 +236,13 @@ python -m app.main --check
 ./scripts/smoke-e2e.sh
 ```
 
-脚本会自动注册临时用户、创建知识库、上传测试文档、等待 Worker 解析完成，然后调用 `/api/chat/ask/stream` 验证 SSE token/done 事件。
+脚本会自动注册临时用户、创建知识库、上传测试文档、等待 Worker 解析完成，然后调用 `/api/chat/ask/stream` 验证 SSE token/sources/done 事件，并拒绝 mock sources。
+
+Demo 数据：
+
+```bash
+./scripts/seed-demo-data.sh
+```
 
 ---
 
@@ -235,9 +256,19 @@ python -m app.main --check
 | DeepSeek / OpenAI / Ollama Provider | ✅ 已实现 |
 | SSE 流式输出 | ✅ 前后端贯通 |
 | 引用来源展示 | ✅ 前后端贯通 |
-| 文档解析进度实时刷新 | TODO |
+| 文档解析进度实时刷新 | ✅ 已实现 |
+| Agent 工作流 | ✅ Router/Retriever/Answer/Citation Guard |
 | MinIO 存储切换 | ✅ 已实现（配置切换） |
 | 端到端 smoke test | ✅ 已实现 |
+
+---
+
+## 简历亮点
+
+- 多服务 RAG 架构：Spring Boot 负责业务编排，Go RAG 负责检索生成，Python Worker 负责异步文档处理。
+- 可信问答闭环：pgvector 按 `kbId` 隔离检索，返回真实 sources，Citation Guard 在证据不足时降级。
+- 工程化：完整 Docker Compose、健康检查、环境变量、Smoke Test 和 demo 数据脚本。
+- Agent 化：支持意图路由、检索规划、结构化回答、引用守卫和 trace。
 
 ---
 

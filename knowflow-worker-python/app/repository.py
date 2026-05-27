@@ -44,7 +44,7 @@ def fetch_task(conn, task_id: int) -> ParseTask | None:
 def claim_task(conn, task_id: int, stale_minutes: int) -> ParseTask | None:
     """
     原子认领解析任务。
-    只有 PENDING/FAILED，或已经超时卡住的 PROCESSING 任务可以被认领。
+    只有 PENDING/FAILED，或已经超时卡住的 PROCESSING/PARSING/EMBEDDING 任务可以被认领。
     """
     with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
         cur.execute(
@@ -55,7 +55,7 @@ def claim_task(conn, task_id: int, stale_minutes: int) -> ParseTask | None:
               AND (
                   status IN (%s, %s)
                   OR (
-                      status = %s
+                      status IN (%s, %s, %s)
                       AND updated_at < NOW() - (%s * INTERVAL '1 minute')
                   )
               )
@@ -67,6 +67,8 @@ def claim_task(conn, task_id: int, stale_minutes: int) -> ParseTask | None:
                 TaskStatus.PENDING,
                 TaskStatus.FAILED,
                 TaskStatus.PROCESSING,
+                TaskStatus.PARSING,
+                TaskStatus.EMBEDDING,
                 stale_minutes,
             ),
         )
@@ -78,7 +80,7 @@ def claim_task(conn, task_id: int, stale_minutes: int) -> ParseTask | None:
 
 
 def list_recoverable_tasks(conn, stale_minutes: int, limit: int) -> list[int]:
-    """列出启动时需要重新投递的 PENDING/超时 PROCESSING 任务。"""
+    """列出启动时需要重新投递的 PENDING/超时 PROCESSING/PARSING/EMBEDDING 任务。"""
     with conn.cursor() as cur:
         cur.execute(
             """
@@ -86,13 +88,13 @@ def list_recoverable_tasks(conn, stale_minutes: int, limit: int) -> list[int]:
             FROM parse_task
             WHERE status = %s
                OR (
-                   status = %s
+                   status IN (%s, %s, %s)
                    AND updated_at < NOW() - (%s * INTERVAL '1 minute')
                )
             ORDER BY updated_at ASC, id ASC
             LIMIT %s
             """,
-            (TaskStatus.PENDING, TaskStatus.PROCESSING, stale_minutes, limit),
+            (TaskStatus.PENDING, TaskStatus.PROCESSING, TaskStatus.PARSING, TaskStatus.EMBEDDING, stale_minutes, limit),
         )
         return [int(row[0]) for row in cur.fetchall()]
 
@@ -114,10 +116,17 @@ def fetch_document(conn, doc_id: int) -> Document | None:
 def update_task_status(conn, task_id: int, status: str, error_message: str = ""):
     """更新解析任务状态。"""
     with conn.cursor() as cur:
-        cur.execute(
-            "UPDATE parse_task SET status = %s, error_message = %s, updated_at = %s WHERE id = %s",
-            (status, error_message, datetime.now(timezone.utc), task_id),
-        )
+        if status == TaskStatus.FAILED:
+            cur.execute(
+                "UPDATE parse_task SET status = %s, error_message = %s, retry_count = COALESCE(retry_count, 0) + 1, "
+                "last_error_at = %s, updated_at = %s WHERE id = %s",
+                (status, error_message, datetime.now(timezone.utc), datetime.now(timezone.utc), task_id),
+            )
+        else:
+            cur.execute(
+                "UPDATE parse_task SET status = %s, error_message = %s, updated_at = %s WHERE id = %s",
+                (status, error_message, datetime.now(timezone.utc), task_id),
+            )
     conn.commit()
 
 
@@ -187,3 +196,13 @@ def _is_pgvector_embedding_column(conn) -> bool:
         )
         row = cur.fetchone()
     return bool(row and row[0] == "vector")
+
+
+def check_database() -> None:
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT 1")
+            cur.fetchone()
+    finally:
+        conn.close()

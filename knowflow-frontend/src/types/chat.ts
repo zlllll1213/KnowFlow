@@ -31,5 +31,18 @@ export interface RagSourceChunk {
   score: number
 }
 
+export interface AgentTraceStep {
+  step: string
+  detail: string
+}
+
+export interface AgentResponse {
+  intent: 'qa' | 'summarize' | 'study_plan' | 'code_analysis' | 'report' | 'unknown'
+  answer: string
+  sources: RagSourceChunk[]
+  confidence: number
+  trace: AgentTraceStep[]
+}
+
 /** @deprecated 使用 RagSourceChunk */
 export type SourceChunk = RagSourceChunk

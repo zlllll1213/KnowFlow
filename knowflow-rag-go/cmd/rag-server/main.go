@@ -40,6 +40,8 @@ func main() {
 	r.GET("/health", h.Health)
 	r.POST("/rag/ask", h.Ask)
 	r.POST("/rag/ask/stream", h.AskStream)
+	r.POST("/agent/ask", h.AskAgent)
+	r.POST("/agent/ask/stream", h.AskAgentStream)
 
 	log.Printf("Go RAG Service 启动: http://localhost:%s", cfg.Port)
 	if err := r.Run(":" + cfg.Port); err != nil {

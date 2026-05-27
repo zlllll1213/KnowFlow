@@ -42,6 +42,8 @@ class DocumentChunk:
 class TaskStatus:
     PENDING = "PENDING"
     PROCESSING = "PROCESSING"
+    PARSING = "PARSING"
+    EMBEDDING = "EMBEDDING"
     DONE = "DONE"
     FAILED = "FAILED"
     CANCELLED = "CANCELLED"

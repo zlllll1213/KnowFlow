@@ -20,7 +20,7 @@ public class TaskServiceImpl implements TaskService {
     private static final String PARSE_QUEUE_KEY = "knowflow:parse:queue";
 
     @Override
-    public void createParseTask(Long documentId, Long kbId) {
+    public Long createParseTask(Long documentId, Long kbId) {
         // 创建 parse_task 记录
         ParseTask task = new ParseTask();
         task.setDocumentId(documentId);
@@ -32,5 +32,6 @@ public class TaskServiceImpl implements TaskService {
         redisTemplate.opsForList().rightPush(PARSE_QUEUE_KEY, task.getId().toString());
 
         log.info("解析任务已创建: taskId={}, documentId={}, 已推入队列 {}", task.getId(), documentId, PARSE_QUEUE_KEY);
+        return task.getId();
     }
 }

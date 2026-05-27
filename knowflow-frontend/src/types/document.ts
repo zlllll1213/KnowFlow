@@ -7,6 +7,8 @@ export interface DocumentVO {
   fileType: string
   fileSize: number
   status: DocumentStatus
+  chunkCount: number
+  parseTaskId?: number
   errorMessage?: string
   createdAt: string
   updatedAt: string

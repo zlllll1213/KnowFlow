@@ -1,7 +1,9 @@
 package com.knowflow.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.knowflow.common.BusinessException;
+import com.knowflow.common.PageResult;
 import com.knowflow.entity.Document;
 import com.knowflow.entity.DocumentChunk;
 import com.knowflow.entity.KnowledgeBase;
@@ -40,6 +42,7 @@ public class DocumentServiceImpl implements DocumentService {
     @Transactional
     public DocumentVO upload(Long userId, Long kbId, MultipartFile file) {
         checkKbOwnership(userId, kbId);
+        validateFile(file);
 
         String originalName = file.getOriginalFilename();
         String objectKey = buildObjectKey(userId, kbId, originalName);
@@ -58,12 +61,12 @@ public class DocumentServiceImpl implements DocumentService {
             doc.setChunkCount(0);
             documentMapper.insert(doc);
 
-            taskService.createParseTask(doc.getId(), kbId);
+            Long parseTaskId = taskService.createParseTask(doc.getId(), kbId);
 
             log.info("文档上传完成: docId={}, kbId={}, file={}, size={}",
                     doc.getId(), kbId, originalName, file.getSize());
 
-            return toVO(doc);
+            return toVO(doc, parseTaskId);
         } catch (RuntimeException e) {
             safeDeleteFile(storedPath);
             throw e;
@@ -71,15 +74,16 @@ public class DocumentServiceImpl implements DocumentService {
     }
 
     @Override
-    public List<DocumentVO> listByKb(Long userId, Long kbId) {
+    public PageResult<DocumentVO> listByKb(Long userId, Long kbId, long page, long size) {
         checkKbOwnership(userId, kbId);
 
-        List<Document> docs = documentMapper.selectList(
+        Page<Document> result = documentMapper.selectPage(new Page<>(page, size),
                 new LambdaQueryWrapper<Document>()
                         .eq(Document::getKbId, kbId)
                         .eq(Document::getUserId, userId)
                         .orderByDesc(Document::getCreatedAt));
-        return docs.stream().map(this::toVO).collect(Collectors.toList());
+        List<DocumentVO> records = result.getRecords().stream().map(this::toVO).collect(Collectors.toList());
+        return PageResult.of(result.getTotal(), result.getCurrent(), result.getSize(), records);
     }
 
     @Override
@@ -140,6 +144,28 @@ public class DocumentServiceImpl implements DocumentService {
         return String.format("%d/%d/%s_%s", userId, kbId, uuid, safeName);
     }
 
+    private void validateFile(MultipartFile file) {
+        if (file == null || file.isEmpty()) {
+            throw new BusinessException(40040, "上传文件不能为空");
+        }
+        String originalName = file.getOriginalFilename();
+        String ext = getExtension(originalName);
+        if (!List.of("pdf", "docx", "txt", "md", "markdown").contains(ext)) {
+            throw new BusinessException(40041, "仅支持 PDF、DOCX、TXT、MD、Markdown 文件");
+        }
+        String contentType = file.getContentType();
+        if (contentType != null && !contentType.isBlank()) {
+            String lower = contentType.toLowerCase();
+            boolean accepted = lower.startsWith("text/")
+                    || lower.equals("application/pdf")
+                    || lower.equals("application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+                    || lower.equals("application/octet-stream");
+            if (!accepted) {
+                throw new BusinessException(40042, "文件类型与支持格式不匹配");
+            }
+        }
+    }
+
     private String getExtension(String filename) {
         if (filename == null || !filename.contains(".")) {
             return "";
@@ -178,6 +204,10 @@ public class DocumentServiceImpl implements DocumentService {
     }
 
     private DocumentVO toVO(Document doc) {
+        return toVO(doc, findLatestParseTaskId(doc.getId()));
+    }
+
+    private DocumentVO toVO(Document doc, Long parseTaskId) {
         return DocumentVO.builder()
                 .id(doc.getId())
                 .kbId(doc.getKbId())
@@ -186,9 +216,18 @@ public class DocumentServiceImpl implements DocumentService {
                 .fileSize(doc.getFileSize())
                 .status(doc.getStatus())
                 .chunkCount(doc.getChunkCount())
+                .parseTaskId(parseTaskId)
                 .errorMessage(doc.getErrorMessage())
                 .createdAt(doc.getCreatedAt())
                 .updatedAt(doc.getUpdatedAt())
                 .build();
+    }
+
+    private Long findLatestParseTaskId(Long docId) {
+        ParseTask task = parseTaskMapper.selectOne(new LambdaQueryWrapper<ParseTask>()
+                .eq(ParseTask::getDocumentId, docId)
+                .orderByDesc(ParseTask::getId)
+                .last("LIMIT 1"));
+        return task == null ? null : task.getId();
     }
 }

@@ -43,7 +43,7 @@ pip install -r requirements.txt
 ```bash
 cp .env.example .env
 # 编辑 .env，修改数据库密码等
-python -m app.main --check
+python3 -m app.main --check
 ```
 
 常用 embedding 配置：
@@ -70,7 +70,7 @@ WORKER_TASK_RECOVERY_LIMIT=500
 ### 3. 启动 Worker
 
 ```bash
-python -m app.main
+python3 -m app.main
 ```
 
 ### 4. Docker 启动

@@ -43,6 +43,9 @@ storage:
 knowflow:
   rag:
     base-url: ${KNOWFLOW_RAG_BASE_URL}
+    connect-timeout-ms: ${KNOWFLOW_RAG_CONNECT_TIMEOUT_MS:3000}
+    read-timeout-ms: ${KNOWFLOW_RAG_READ_TIMEOUT_MS:120000}
+    mock-fallback-enabled: ${KNOWFLOW_RAG_MOCK_FALLBACK_ENABLED:false}
 
 # 生产日志级别
 logging:

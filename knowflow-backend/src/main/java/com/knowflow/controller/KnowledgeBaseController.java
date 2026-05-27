@@ -1,8 +1,10 @@
 package com.knowflow.controller;
 
 import com.knowflow.common.Result;
+import com.knowflow.common.PageResult;
 import com.knowflow.dto.KbCreateRequest;
 import com.knowflow.dto.KbUpdateRequest;
+import com.knowflow.dto.PageRequest;
 import com.knowflow.security.LoginUser;
 import com.knowflow.service.KnowledgeBaseService;
 import com.knowflow.vo.KbVO;
@@ -10,8 +12,6 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
-
-import java.util.List;
 
 @RestController
 @RequestMapping("/api/kb")
@@ -30,8 +30,11 @@ public class KnowledgeBaseController {
 
     /** 获取知识库列表 */
     @GetMapping("/list")
-    public Result<List<KbVO>> list(@AuthenticationPrincipal LoginUser loginUser) {
-        List<KbVO> list = kbService.list(loginUser.getUserId());
+    public Result<PageResult<KbVO>> list(@AuthenticationPrincipal LoginUser loginUser,
+                                         @RequestParam(required = false) Long page,
+                                         @RequestParam(required = false) Long size) {
+        PageResult<KbVO> list = kbService.list(loginUser.getUserId(),
+                PageRequest.normalizePage(page), PageRequest.normalizeSize(size));
         return Result.success(list);
     }
 

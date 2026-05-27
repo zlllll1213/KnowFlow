@@ -16,6 +16,7 @@ public class DocumentVO {
     private Long fileSize;
     private String status;
     private Integer chunkCount;
+    private Long parseTaskId;
     private String errorMessage;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;

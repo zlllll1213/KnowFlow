@@ -139,4 +139,48 @@ if ! grep -q '^event:token' "$stream_file"; then
   exit 1
 fi
 
+if ! grep -q '^event:sources' "$stream_file"; then
+  echo "stream did not include sources event" >&2
+  cat "$stream_file" >&2
+  exit 1
+fi
+
+python3 - "$stream_file" <<'PY'
+import json
+import sys
+
+path = sys.argv[1]
+events = []
+event = "message"
+data_lines = []
+for raw in open(path, encoding="utf-8"):
+    line = raw.rstrip("\n")
+    if not line:
+        if data_lines:
+            events.append((event, "\n".join(data_lines)))
+        event = "message"
+        data_lines = []
+        continue
+    if line.startswith("event:"):
+        event = line.split(":", 1)[1].strip()
+    elif line.startswith("data:"):
+        data_lines.append(line.split(":", 1)[1].strip())
+
+sources_payloads = [json.loads(data) for name, data in events if name == "sources"]
+if not sources_payloads:
+    raise SystemExit("missing sources payload")
+
+sources = sources_payloads[-1]
+if isinstance(sources, dict):
+    sources = sources.get("sources", [])
+if not sources:
+    raise SystemExit("sources payload is empty")
+for source in sources:
+    if source.get("fileName") == "mock-notice.txt":
+        raise SystemExit("sources contain mock-notice.txt")
+    for key in ("chunkId", "documentId", "fileName", "content"):
+        if source.get(key) in (None, "", 0):
+            raise SystemExit(f"source missing real {key}: {source}")
+PY
+
 echo "Smoke test passed."
