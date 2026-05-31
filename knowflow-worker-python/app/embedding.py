@@ -4,6 +4,7 @@ Embedding 生成模块。
 """
 
 import logging
+import math
 from typing import Iterable
 
 import httpx
@@ -32,8 +33,30 @@ def generate_embeddings(chunks: list[DocumentChunk]) -> None:
 def _mock_embed(chunks: list[DocumentChunk]) -> None:
     dim = config.embedding_dim
     for chunk in chunks:
-        chunk.embedding = [0.0] * dim
-    log.warning("MOCK embedding: 生成了 %d 个零向量 (dim=%d)", len(chunks), dim)
+        chunk.embedding = _mock_embedding_for_text(chunk.content, dim)
+    log.warning("MOCK embedding: 生成了 %d 个确定性非零向量 (dim=%d)", len(chunks), dim)
+
+
+def _mock_embedding_for_text(text: str, dim: int) -> list[float]:
+    if dim <= 0:
+        raise RuntimeError(f"WORKER_EMBEDDING_DIM 必须大于 0: {dim}")
+
+    vector = [0.0] * dim
+    for char in (text or "").lower():
+        if char.isspace():
+            continue
+        code = ord(char) & 0xFFFFFFFF
+        hashed = (code * 2654435761) & 0xFFFFFFFF
+        index = hashed % dim
+        sign = 1.0 if ((hashed >> 8) & 1) == 0 else -1.0
+        weight = 1.0 + ((hashed >> 16) % 7) / 10.0
+        vector[index] += sign * weight
+
+    norm = math.sqrt(sum(value * value for value in vector))
+    if norm == 0:
+        vector[0] = 1.0
+        return vector
+    return [value / norm for value in vector]
 
 
 def _openai_compatible_embed(chunks: list[DocumentChunk]) -> None:

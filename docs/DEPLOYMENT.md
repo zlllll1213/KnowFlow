@@ -27,6 +27,12 @@ The root `docker-compose.yml` starts PostgreSQL + pgvector, Redis, MinIO, bucket
 docker compose up --build
 ```
 
+If local containers named `knowflow-postgres`, `knowflow-redis`, or `knowflow-minio` already exist, start an isolated smoke stack instead:
+
+```bash
+docker compose -p knowflow-smoke -f docker-compose.yml -f docker-compose.smoke.yml up --build -d
+```
+
 Default URLs:
 
 - Frontend: `http://localhost:5173`
@@ -51,6 +57,12 @@ After all services are running:
 
 ```bash
 ./scripts/smoke-e2e.sh
+```
+
+For the isolated smoke stack:
+
+```bash
+BACKEND_URL=http://localhost:18081 RAG_URL=http://localhost:18090 ./scripts/smoke-e2e.sh
 ```
 
 The smoke test registers a user, creates a knowledge base, uploads a document, waits for parsing, asks through SSE, and verifies real sources.

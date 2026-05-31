@@ -100,6 +100,13 @@ docker compose up --build
 
 这会启动 PostgreSQL 16 + pgvector、Redis、MinIO、MinIO bucket 初始化、Spring Boot、Go RAG、Python Worker 和 Vue Preview。
 
+如果本机已经有 `knowflow-postgres` / `knowflow-redis` / `knowflow-minio` 等旧容器在运行，可以使用隔离 smoke 环境，避免端口和容器名冲突：
+
+```bash
+docker compose -p knowflow-smoke -f docker-compose.yml -f docker-compose.smoke.yml up --build -d
+BACKEND_URL=http://localhost:18081 RAG_URL=http://localhost:18090 ./scripts/smoke-e2e.sh
+```
+
 ### 2. 或手动启动基础设施
 
 ```bash
@@ -237,6 +244,8 @@ python3 -m app.main --check
 ```
 
 脚本会自动注册临时用户、创建知识库、上传测试文档、等待 Worker 解析完成，然后调用 `/api/chat/ask/stream` 验证 SSE token/sources/done 事件，并拒绝 mock sources。
+
+隔离 smoke 环境默认使用 `18081`（Backend）、`18090`（Go RAG）、`15173`（Frontend），不会占用常规开发端口。
 
 Demo 数据：
 

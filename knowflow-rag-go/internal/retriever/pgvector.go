@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
+	"math"
 	"regexp"
 	"strconv"
 	"strings"
@@ -140,6 +141,7 @@ func (r *PgRetriever) retrieveByVector(ctx context.Context, kbId int64, queryEmb
 		if err := rows.Scan(&s.ChunkId, &s.DocumentId, &s.ChunkIndex, &s.Content, &s.FileName, &s.Score); err != nil {
 			return nil, err
 		}
+		s.Score = sanitizeScore(s.Score)
 		sources = append(sources, s)
 	}
 	if err := rows.Err(); err != nil {
@@ -168,6 +170,19 @@ func vectorLiteral(values []float32) string {
 
 func isBadFloat(v float32) bool {
 	return v != v || v > 1e20 || v < -1e20 // NaN check + overflow guard
+}
+
+func sanitizeScore(score float64) float64 {
+	if math.IsNaN(score) || math.IsInf(score, 0) {
+		return 0
+	}
+	if score < 0 {
+		return 0
+	}
+	if score > 1 {
+		return 1
+	}
+	return score
 }
 
 var keywordPattern = regexp.MustCompile(`[A-Za-z0-9][A-Za-z0-9_-]*|[\p{Han}]+`)

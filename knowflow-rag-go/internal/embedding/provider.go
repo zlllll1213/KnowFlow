@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/http"
 	"strings"
 
@@ -46,16 +47,33 @@ func (m *MockProvider) Embed(ctx context.Context, text string) ([]float32, error
 	if dim <= 0 {
 		dim = 1536
 	}
-	// 基于输入文本产生确定性变体向量，而非所有查询全相同
+
 	vec := make([]float32, dim)
-	seed := uint32(0)
-	for _, r := range text {
-		seed = seed*31 + uint32(r)
+	for _, r := range strings.ToLower(text) {
+		if r == ' ' || r == '\n' || r == '\t' || r == '\r' {
+			continue
+		}
+		hashed := uint32(r) * 2654435761
+		index := int(hashed % uint32(dim))
+		sign := float32(1)
+		if (hashed>>8)&1 == 1 {
+			sign = -1
+		}
+		weight := float32(1.0 + float64((hashed>>16)%7)/10.0)
+		vec[index] += sign * weight
 	}
+
+	var norm float64
+	for _, value := range vec {
+		norm += float64(value * value)
+	}
+	if norm == 0 {
+		vec[0] = 1
+		return vec, nil
+	}
+	scale := float32(1 / math.Sqrt(norm))
 	for i := range vec {
-		// 用 seed + index 产生一个 -0.1 ~ 0.1 的伪随机值叠加在 0.05 基线上
-		h := (seed + uint32(i)) * 2654435761 // Knuth multiplicative hash
-		vec[i] = 0.05 + (float32(h%200)-100)/1000.0
+		vec[i] *= scale
 	}
 	return vec, nil
 }

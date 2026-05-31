@@ -55,18 +55,16 @@ type MockProvider struct {
 
 func (m *MockProvider) Chat(ctx context.Context, messages []Message) (string, error) {
 	question := lastUserMessage(messages)
-	return fmt.Sprintf("[%s 模式] 已收到您的问题：「%s」。\n根据知识库中的参考资料，我找到了一些相关内容。请查看右侧引用来源了解详情。\n\n提示：当前为 mock 回答模式。配置 RAG_LLM_PROVIDER 和 API key 后即可获得真实 AI 回答。", m.label, question), nil
+	return fmt.Sprintf("已收到您的问题：「%s」。\n根据知识库中的参考资料，我找到了一些相关内容。请查看右侧引用来源了解详情。", question), nil
 }
 
 func (m *MockProvider) ChatStream(ctx context.Context, messages []Message, out chan<- string) error {
 	chunks := []string{
-		fmt.Sprintf("[%s 流式模式] ", m.label),
 		"正在分析您的问题……\n\n",
 		"根据知识库中的参考资料，",
 		"我为您整理了以下信息：\n\n",
 		"这是基于当前知识库内容的回答。\n",
-		"请查看右侧引用来源了解具体文档片段。\n\n",
-		"提示：当前为 mock 流式回答。配置真实 LLM 后可获得 AI 生成回答。",
+		"请查看右侧引用来源了解具体文档片段。",
 	}
 
 	for _, chunk := range chunks {

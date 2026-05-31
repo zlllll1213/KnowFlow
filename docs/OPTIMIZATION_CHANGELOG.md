@@ -1,8 +1,8 @@
 # KnowFlow Optimization Changelog
 
-## Staged Execution Status · 2026-05-27
+## Staged Execution Status · 2026-06-01
 
-**全部六个阶段已完成。** 第六阶段（Dashboard 统计可信度）已补齐 `DashboardServiceImpl` 最小单元测试，验证当前用户维度统计与 SQL 作用域参数。
+**前七个阶段已完成。** 第七阶段完成完整 Docker Compose 隔离 smoke 验收，并补齐 mock embedding / score NaN 防护，RAG 与 Agent 主链路已通过端到端检查。
 
 ### 第一阶段：稳定 RAG 主链路 ✅
 
@@ -54,11 +54,21 @@
 - 使用手写 `RecordingJdbcTemplate` 捕获原生 SQL 与参数，检查 `chunkCount` 和 `recentFailedTasks` 均使用 `d.user_id = ?`、`kb.user_id = ?`，且参数为当前 `userId` 两次，避免跨用户统计。
 - 覆盖 `chunkCount` SQL 返回 `null` 时降级为 0 的边界行为。
 
+### 第七阶段：完整 Compose Smoke 验收 ✅
+
+- 新增 `docker-compose.smoke.yml`，使用 `knowflow-smoke-*` 容器名和 `18081/18090/15173` 等隔离端口，避免本机已有旧 KnowFlow 容器时发生端口或容器名冲突。
+- Python Worker mock embedding 从全零向量改为确定性非零向量，避免 pgvector cosine 距离产生 `NaN`。
+- Go RAG mock embedding 使用同类确定性字符哈希向量，与 Worker mock 行为对齐，开发环境也能完成真实检索路径。
+- Go RAG 检索分数增加 `NaN/Inf` 清洗，sources JSON 不再因非法 float 序列化为空。
+- Go mock LLM 文案移除 `mock/fallback` 显示字样，避免与 Spring RAG fallback 语义混淆；fallback-disabled 仍由 smoke 脚本校验。
+- 前端 Docker healthcheck 改为访问 `127.0.0.1:5173`，避免容器内 `localhost` IPv6 解析导致长期 `health: starting`。
+- 使用隔离 compose 环境完成 `scripts/smoke-e2e.sh`：上传、解析、RAG SSE sources、Agent SSE meta/trace/confidence 全部通过。
+
 ### 下一步
 
-- 启动完整 Docker Compose，运行 `scripts/smoke-e2e.sh` 验证全链路。
 - 做一次最终 diff review，确认没有无关改动和敏感配置。
 - 可选补充 Chat/Agent SSE 解析的前端单元测试或轻量 Playwright 演示验收。
+- 可选做一次依赖升级专项，处理 Vite/esbuild moderate dev-server audit 提示。
 
 ## P0: 真实闭环与可信度
 
@@ -118,8 +128,9 @@
 - `npm run build`: passed.
 - `go test ./...`: passed.
 - `cd knowflow-backend && mvn test -q` after DashboardServiceImpl test: passed.
+- `docker compose -p knowflow-smoke -f docker-compose.yml -f docker-compose.smoke.yml up --build -d`: passed.
+- `BACKEND_URL=http://localhost:18081 RAG_URL=http://localhost:18090 TIMEOUT_SECONDS=120 ./scripts/smoke-e2e.sh`: passed.
 - `python3 -m compileall app`: passed.
 - `./.venv/bin/python -m app.main --check`: passed.
 - `python3 -m app.main --check`: failed in the global interpreter because dependencies such as `redis` are not installed there.
 - `docker compose config`: passed.
-- Full Docker smoke test was not run in this pass because it requires building and starting the full compose stack.
