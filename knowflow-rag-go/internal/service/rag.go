@@ -250,7 +250,7 @@ func (s *RAGService) AskAgentStream(ctx context.Context, req types.RagRequest) (
 			}
 			elapsed := time.Since(start).Milliseconds()
 			s.logCall(ctx, "agent", intent, req, topK, len(sources), retrieveMs, 0, elapsed, confidence, trace)
-			metaCh <- types.AgentResponse{Intent: intent, Answer: answer, Sources: sources, Confidence: confidence, Trace: trace, LatencyMs: elapsed}
+			metaCh <- types.AgentResponse{Intent: intent, Sources: sources, Confidence: confidence, Trace: trace, LatencyMs: elapsed}
 			tokenCh <- answer
 			sourceCh <- sources
 			return

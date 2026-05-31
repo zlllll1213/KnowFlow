@@ -77,18 +77,18 @@ func TestMockProviderCustomDim(t *testing.T) {
 }
 
 func TestOllamaProviderSingleEmbed(t *testing.T) {
-	// 模拟 Ollama /api/embeddings 响应
+	// 模拟新版 Ollama /api/embed 响应
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			t.Errorf("expected POST, got %s", r.Method)
 		}
-		if r.URL.Path != "/api/embeddings" {
-			t.Errorf("expected /api/embeddings, got %s", r.URL.Path)
+		if r.URL.Path != "/api/embed" {
+			t.Errorf("expected /api/embed, got %s", r.URL.Path)
 		}
 
 		var body struct {
-			Model  string `json:"model"`
-			Prompt string `json:"prompt"`
+			Model string `json:"model"`
+			Input string `json:"input"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			t.Errorf("failed to decode body: %v", err)
@@ -96,13 +96,13 @@ func TestOllamaProviderSingleEmbed(t *testing.T) {
 		if body.Model != "nomic-embed-text" {
 			t.Errorf("expected model nomic-embed-text, got %s", body.Model)
 		}
-		if body.Prompt != "hello world" {
-			t.Errorf("expected prompt 'hello world', got %s", body.Prompt)
+		if body.Input != "hello world" {
+			t.Errorf("expected input 'hello world', got %s", body.Input)
 		}
 
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]any{
-			"embedding": []float32{0.1, 0.2, 0.3},
+			"embeddings": [][]float32{{0.1, 0.2, 0.3}},
 		})
 	}))
 	defer server.Close()
@@ -122,6 +122,50 @@ func TestOllamaProviderSingleEmbed(t *testing.T) {
 	}
 	if v[0] != 0.1 || v[1] != 0.2 || v[2] != 0.3 {
 		t.Fatalf("unexpected embedding values: %v", v)
+	}
+}
+
+func TestOllamaProviderPromptFallback(t *testing.T) {
+	requests := make([]string, 0, 2)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests = append(requests, r.URL.Path)
+		if r.URL.Path == "/api/embed" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		if r.URL.Path != "/api/embeddings" {
+			t.Errorf("expected fallback /api/embeddings, got %s", r.URL.Path)
+		}
+		var body struct {
+			Prompt string `json:"prompt"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Errorf("failed to decode body: %v", err)
+		}
+		if body.Prompt != "fallback text" {
+			t.Errorf("expected fallback prompt, got %s", body.Prompt)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"embedding": []float32{0.4, 0.5},
+		})
+	}))
+	defer server.Close()
+
+	p := &OllamaProvider{
+		baseURL: server.URL,
+		model:   "nomic-embed-text",
+		client:  server.Client(),
+	}
+	v, err := p.Embed(context.Background(), "fallback text")
+	if err != nil {
+		t.Fatalf("Embed returned error: %v", err)
+	}
+	if len(requests) != 2 || requests[0] != "/api/embed" || requests[1] != "/api/embeddings" {
+		t.Fatalf("unexpected request sequence: %v", requests)
+	}
+	if len(v) != 2 || v[0] != 0.4 || v[1] != 0.5 {
+		t.Fatalf("unexpected fallback embedding: %v", v)
 	}
 }
 

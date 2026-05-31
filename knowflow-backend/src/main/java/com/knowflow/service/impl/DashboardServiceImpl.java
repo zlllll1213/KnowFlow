@@ -5,7 +5,6 @@ import com.knowflow.entity.ChatSession;
 import com.knowflow.entity.Document;
 import com.knowflow.entity.KnowledgeBase;
 import com.knowflow.mapper.ChatMessageMapper;
-import com.knowflow.mapper.ChatSessionMapper;
 import com.knowflow.mapper.DocumentMapper;
 import com.knowflow.mapper.KnowledgeBaseMapper;
 import com.knowflow.service.DashboardService;
@@ -26,7 +25,6 @@ public class DashboardServiceImpl implements DashboardService {
 
     private final KnowledgeBaseMapper knowledgeBaseMapper;
     private final DocumentMapper documentMapper;
-    private final ChatSessionMapper chatSessionMapper;
     private final ChatMessageMapper chatMessageMapper;
     private final JdbcTemplate jdbcTemplate;
 
@@ -90,10 +88,36 @@ public class DashboardServiceImpl implements DashboardService {
     }
 
     private List<ChatSession> recentSessions(Long userId) {
-        return chatSessionMapper.selectList(new LambdaQueryWrapper<ChatSession>()
-                .eq(ChatSession::getUserId, userId)
-                .orderByDesc(ChatSession::getUpdatedAt)
-                .last("LIMIT 5"));
+        return jdbcTemplate.query("""
+                        SELECT cs.id,
+                               cs.kb_id,
+                               cs.user_id,
+                               cs.title,
+                               cs.is_deleted,
+                               cs.created_at,
+                               cs.updated_at
+                        FROM chat_session cs
+                        JOIN knowledge_base kb ON kb.id = cs.kb_id
+                        WHERE cs.user_id = ?
+                          AND kb.user_id = ?
+                          AND cs.is_deleted = 0
+                          AND kb.is_deleted = 0
+                        ORDER BY cs.updated_at DESC
+                        LIMIT 5
+                        """,
+                (rs, rowNum) -> {
+                    ChatSession session = new ChatSession();
+                    session.setId(rs.getLong("id"));
+                    session.setKbId(rs.getLong("kb_id"));
+                    session.setUserId(rs.getLong("user_id"));
+                    session.setTitle(rs.getString("title"));
+                    session.setIsDeleted(rs.getInt("is_deleted"));
+                    session.setCreatedAt(toLocalDateTime(rs.getTimestamp("created_at")));
+                    session.setUpdatedAt(toLocalDateTime(rs.getTimestamp("updated_at")));
+                    return session;
+                },
+                userId,
+                userId);
     }
 
     private List<RecentFailedTaskVO> recentFailedTasks(Long userId) {

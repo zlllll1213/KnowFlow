@@ -69,10 +69,18 @@ func (h *Handler) AskStream(c *gin.Context) {
 		select {
 		case token, ok := <-tokenCh:
 			if !ok {
+				if err, hasErr := pendingStreamError(errCh); hasErr {
+					writeSSE(c, flusher, "error", gin.H{"type": "error", "message": err.Error()})
+					return
+				}
 				select {
 				case sources := <-sourceCh:
 					writeSSE(c, flusher, "sources", gin.H{"type": "sources", "sources": sources})
 				default:
+				}
+				if err, hasErr := pendingStreamError(errCh); hasErr {
+					writeSSE(c, flusher, "error", gin.H{"type": "error", "message": err.Error()})
+					return
 				}
 				writeSSE(c, flusher, "done", gin.H{"type": "done"})
 				return
@@ -139,10 +147,18 @@ func (h *Handler) AskAgentStream(c *gin.Context) {
 			})
 		case token, ok := <-tokenCh:
 			if !ok {
+				if err, hasErr := pendingStreamError(errCh); hasErr {
+					writeSSE(c, flusher, "error", gin.H{"type": "error", "message": err.Error()})
+					return
+				}
 				select {
 				case sources := <-sourceCh:
 					writeSSE(c, flusher, "sources", gin.H{"type": "sources", "sources": sources})
 				default:
+				}
+				if err, hasErr := pendingStreamError(errCh); hasErr {
+					writeSSE(c, flusher, "error", gin.H{"type": "error", "message": err.Error()})
+					return
 				}
 				writeSSE(c, flusher, "done", gin.H{"type": "done"})
 				return
@@ -185,5 +201,14 @@ func writeSSE(c *gin.Context, flusher http.Flusher, event string, payload any) {
 	fmt.Fprintf(c.Writer, "data: %s\n\n", data)
 	if flusher != nil {
 		flusher.Flush()
+	}
+}
+
+func pendingStreamError(errCh <-chan error) (error, bool) {
+	select {
+	case err, ok := <-errCh:
+		return err, ok && err != nil
+	default:
+		return nil, false
 	}
 }

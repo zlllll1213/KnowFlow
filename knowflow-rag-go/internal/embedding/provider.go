@@ -133,6 +133,48 @@ type OllamaProvider struct {
 }
 
 func (p *OllamaProvider) Embed(ctx context.Context, text string) ([]float32, error) {
+	if embedding, err := p.embedWithInput(ctx, text); err == nil {
+		return embedding, nil
+	}
+	return p.embedWithPrompt(ctx, text)
+}
+
+func (p *OllamaProvider) embedWithInput(ctx context.Context, text string) ([]float32, error) {
+	body, err := json.Marshal(map[string]any{
+		"model": p.model,
+		"input": text,
+	})
+	if err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(p.baseURL, "/")+"/api/embed", bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := p.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("ollama embed 返回状态码 %d", resp.StatusCode)
+	}
+
+	var data struct {
+		Embeddings [][]float32 `json:"embeddings"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
+		return nil, err
+	}
+	if len(data.Embeddings) == 0 || len(data.Embeddings[0]) == 0 {
+		return nil, fmt.Errorf("ollama 未返回向量")
+	}
+	return data.Embeddings[0], nil
+}
+
+func (p *OllamaProvider) embedWithPrompt(ctx context.Context, text string) ([]float32, error) {
 	body, err := json.Marshal(map[string]any{
 		"model":  p.model,
 		"prompt": text,

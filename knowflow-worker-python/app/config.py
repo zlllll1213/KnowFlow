@@ -64,6 +64,7 @@ class Config:
     task_claim_stale_minutes: int = int(os.getenv("WORKER_TASK_CLAIM_STALE_MINUTES", "30"))
     task_recovery_on_start: bool = os.getenv("WORKER_TASK_RECOVERY_ON_START", "true").lower() == "true"
     task_recovery_limit: int = int(os.getenv("WORKER_TASK_RECOVERY_LIMIT", "500"))
+    task_recovery_interval_seconds: int = int(os.getenv("WORKER_TASK_RECOVERY_INTERVAL_SECONDS", "60"))
 
     # 日志
     log_level: str = os.getenv("WORKER_LOG_LEVEL", "INFO")
@@ -111,6 +112,8 @@ class Config:
             errors.append("WORKER_TASK_CLAIM_STALE_MINUTES 必须大于 0")
         if self.task_recovery_limit <= 0:
             errors.append("WORKER_TASK_RECOVERY_LIMIT 必须大于 0")
+        if self.task_recovery_interval_seconds < 0:
+            errors.append("WORKER_TASK_RECOVERY_INTERVAL_SECONDS 不能小于 0")
 
         return errors
 

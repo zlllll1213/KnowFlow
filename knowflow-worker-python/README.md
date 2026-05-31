@@ -62,13 +62,14 @@ WORKER_EMBEDDING_TIMEOUT_SECONDS=60
 
 ```env
 WORKER_CONCURRENCY=2
-# Worker 启动时会把 PENDING 和超时 PROCESSING 任务重新投递到 Redis
+# Worker 会把未投递的 PENDING 和超时 PROCESSING/PARSING/EMBEDDING 任务重新投递到 Redis
 WORKER_TASK_RECOVERY_ON_START=true
 WORKER_TASK_CLAIM_STALE_MINUTES=30
 WORKER_TASK_RECOVERY_LIMIT=500
+WORKER_TASK_RECOVERY_INTERVAL_SECONDS=60
 ```
 
-`WORKER_CONCURRENCY` 控制线程池并发数。主线程只负责从 Redis 队列消费 taskId，实际解析、切片、embedding 和写库由线程池执行；同一个 taskId 会先经过数据库 `claim_task` 原子认领，重复入队时只有一个线程能处理成功。
+`WORKER_CONCURRENCY` 控制线程池并发数。主线程只负责从 Redis 队列消费 taskId，实际解析、切片、embedding 和写库由线程池执行；同一个 taskId 会先经过数据库 `claim_task` 原子认领，重复入队时只有一个线程能处理成功。Worker 会在启动时和运行中按间隔扫描可恢复任务，兜底处理事务提交后 Redis 入队失败导致的 `PENDING` 任务。
 
 ### 3. 启动 Worker
 
@@ -110,7 +111,7 @@ document: → FAILED
 task:     → FAILED (记录 error_message)
 ```
 
-Worker 会在数据库里原子认领任务。重复入队、重复消费、已完成任务再次出现在 Redis 中时，会根据 `parse_task.status` 自动跳过；如果进程异常退出导致任务长时间停留在 `PROCESSING`，下次启动会按 `WORKER_TASK_CLAIM_STALE_MINUTES` 重新恢复。
+Worker 会在数据库里原子认领任务。重复入队、重复消费、已完成任务再次出现在 Redis 中时，会根据 `parse_task.status` 自动跳过；如果进程异常退出导致任务长时间停留在 `PROCESSING` / `PARSING` / `EMBEDDING`，或后端事务提交后 Redis 入队短暂失败导致任务停留在 `PENDING`，Worker 会按 `WORKER_TASK_RECOVERY_INTERVAL_SECONDS` 定期重新恢复。
 
 ## 后续规划
 

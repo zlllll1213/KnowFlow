@@ -42,7 +42,7 @@
 
 - `scripts/smoke-e2e.sh` 增加 Agent 流式断言：`event:meta`（confidence 数值 0-1、trace 非空 step/detail）、`event:token`、`event:sources`（真实字段）、`event:done`。
 - RAG 与 Agent 流均增加 fallback-disabled 验证：回答中不含 `mock`/`fallback`/`模拟`/`mock-notice.txt`。
-- 验证 Go Ollama embedding（`/api/embeddings` + `"prompt"`）兼容实际 Ollama 单文本接口 — Go 侧仅做查询时单条 embedding，批量为 Python Worker 职责，无需修改。
+- Go Ollama embedding 支持新版 `/api/embed` + `input`，并保留旧版 `/api/embeddings` + `prompt` fallback。
 - 新增 `knowflow-rag-go/internal/embedding/provider_test.go`：MockProvider 确定性/不同文本差异性/维度，OllamaProvider 单次请求体格式/空向量报错/HTTP 错误状态码。
 - `go test ./...` 全量通过（含新增 7 个 embedding 用例）。
 
@@ -64,11 +64,24 @@
 - 前端 Docker healthcheck 改为访问 `127.0.0.1:5173`，避免容器内 `localhost` IPv6 解析导致长期 `health: starting`。
 - 使用隔离 compose 环境完成 `scripts/smoke-e2e.sh`：上传、解析、RAG SSE sources、Agent SSE meta/trace/confidence 全部通过。
 
+### 第八阶段：Reasonix + Codex 联合 Review 收口 ✅
+
+- 使用 `npx reasonix@latest code --new` 启动 DeepSeek 审查会话，配合 Codex 本地人工复核 `origin/main...HEAD`。
+- 修复 Go RAG / Agent SSE handler 的错误优先级：当后台流式调用报错并关闭 token channel 时，handler 先检查 pending error，再决定是否发送 `done`，避免错误被伪装成成功完成。
+- 新增 `internal/handler/handler_test.go`，覆盖 buffered error 优先返回与空 closed channel 的边界。
+- 知识库详情页文档状态刷新改为与文档管理页一致：按文档 ID 每 2s 轮询、最多 180 次、DONE/FAILED 停止、FAILED 拉取详情并展示 `errorMessage`，避免列表级无限轮询。
+- Worker 处理任务时改为短连接段：认领/状态更新/写入时借用 DB 连接，下载、解析、embedding 期间释放连接，降低并发下连接池被 I/O 占满的风险。
+- Worker 增加运行中周期恢复：按 `WORKER_TASK_RECOVERY_INTERVAL_SECONDS` 扫描 PENDING 和超时任务并重新投递，兜底事务提交后 Redis 入队短暂失败。
+- Spring `TaskServiceImpl.afterCommit` 捕获 Redis 入队异常并记录 taskId/documentId，不再让 afterCommit 异常只停留在框架日志里。
+- Dashboard `recentSessions` 改为显式 JOIN `knowledge_base` 并过滤 `cs.is_deleted = 0` / `kb.is_deleted = 0`，避免显示已删除知识库下的会话。
+- Agent 流式早返回路径的 `meta` 不再携带 `answer`，回答文本统一通过 `token` 事件输出，前后端 SSE 契约更稳定。
+- Go Ollama embedding 支持新版 `/api/embed` + 旧版 `/api/embeddings` fallback，并补充对应测试。
+
 ### 下一步
 
-- 做一次最终 diff review，确认没有无关改动和敏感配置。
-- 可选补充 Chat/Agent SSE 解析的前端单元测试或轻量 Playwright 演示验收。
-- 可选做一次依赖升级专项，处理 Vite/esbuild moderate dev-server audit 提示。
+- 跑完整验证：Go test、Backend test、Frontend build、Worker `--check`、隔离 smoke。
+- 将第八阶段收口修复提交并推送到 `codex/reasonix-followup`。
+- 下一阶段可补充 Chat/Agent SSE 前端单元测试，或做依赖升级专项处理 Vite/esbuild audit 提示。
 
 ## P0: 真实闭环与可信度
 
@@ -130,7 +143,17 @@
 - `cd knowflow-backend && mvn test -q` after DashboardServiceImpl test: passed.
 - `docker compose -p knowflow-smoke -f docker-compose.yml -f docker-compose.smoke.yml up --build -d`: passed.
 - `BACKEND_URL=http://localhost:18081 RAG_URL=http://localhost:18090 TIMEOUT_SECONDS=120 ./scripts/smoke-e2e.sh`: passed.
+- `cd knowflow-rag-go && go test ./...` after SSE error-priority fix: passed.
+- `cd knowflow-frontend && npm run build` after KnowledgeBaseDetail polling fix: passed.
 - `python3 -m compileall app`: passed.
 - `./.venv/bin/python -m app.main --check`: passed.
 - `python3 -m app.main --check`: failed in the global interpreter because dependencies such as `redis` are not installed there.
 - `docker compose config`: passed.
+- `git diff --check`: passed after Reasonix review hardening.
+- `cd knowflow-rag-go && go test ./...`: passed after SSE / Ollama compatibility hardening.
+- `cd knowflow-backend && mvn test -q`: passed after Dashboard recentSessions and TaskService afterCommit logging changes.
+- `cd knowflow-frontend && npm run build`: passed after KnowledgeBaseDetail polling changes.
+- `cd knowflow-worker-python && python3 -m compileall app`: passed after Worker short-connection and periodic recovery changes.
+- `cd knowflow-worker-python && WORKER_REDIS_URL=redis://localhost:16379/0 WORKER_DB_DSN=postgresql://knowflow:knowflow123@localhost:15432/knowflow WORKER_STORAGE_TYPE=minio WORKER_MINIO_ENDPOINT=localhost:19000 WORKER_MINIO_ACCESS_KEY=minioadmin WORKER_MINIO_SECRET_KEY=minioadmin123 WORKER_MINIO_BUCKET=knowflow ./.venv/bin/python -m app.main --check`: passed.
+- `docker compose -p knowflow-smoke -f docker-compose.yml -f docker-compose.smoke.yml up --build -d`: passed after rebuilding backend/rag/worker/frontend images.
+- `BACKEND_URL=http://localhost:18081 RAG_URL=http://localhost:18090 TIMEOUT_SECONDS=120 ./scripts/smoke-e2e.sh`: passed after Reasonix review hardening.

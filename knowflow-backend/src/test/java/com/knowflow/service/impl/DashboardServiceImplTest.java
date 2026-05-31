@@ -3,7 +3,6 @@ package com.knowflow.service.impl;
 import com.knowflow.entity.ChatSession;
 import com.knowflow.entity.Document;
 import com.knowflow.mapper.ChatMessageMapper;
-import com.knowflow.mapper.ChatSessionMapper;
 import com.knowflow.mapper.DocumentMapper;
 import com.knowflow.mapper.KnowledgeBaseMapper;
 import com.knowflow.vo.DashboardStatsVO;
@@ -35,8 +34,6 @@ class DashboardServiceImplTest {
     @Mock
     private DocumentMapper documentMapper;
     @Mock
-    private ChatSessionMapper chatSessionMapper;
-    @Mock
     private ChatMessageMapper chatMessageMapper;
 
     private DashboardServiceImpl service;
@@ -48,7 +45,6 @@ class DashboardServiceImplTest {
         service = new DashboardServiceImpl(
                 knowledgeBaseMapper,
                 documentMapper,
-                chatSessionMapper,
                 chatMessageMapper,
                 jdbcTemplate
         );
@@ -84,7 +80,7 @@ class DashboardServiceImplTest {
         when(chatMessageMapper.selectCount(any())).thenReturn(25L);
         jdbcTemplate.chunkCount = 860L;
         when(documentMapper.selectList(any())).thenReturn(List.of(recentDoc));
-        when(chatSessionMapper.selectList(any())).thenReturn(List.of(recentSession));
+        jdbcTemplate.sessions = List.of(recentSession);
         jdbcTemplate.failedTasks = List.of(failedTask);
 
         DashboardStatsVO stats = service.getStats(USER_ID);
@@ -112,7 +108,7 @@ class DashboardServiceImplTest {
         when(chatMessageMapper.selectCount(any())).thenReturn(0L);
         jdbcTemplate.chunkCount = null;
         when(documentMapper.selectList(any())).thenReturn(List.of());
-        when(chatSessionMapper.selectList(any())).thenReturn(List.of());
+        jdbcTemplate.sessions = List.of();
         jdbcTemplate.failedTasks = List.of();
 
         DashboardStatsVO stats = service.getStats(USER_ID);
@@ -128,12 +124,14 @@ class DashboardServiceImplTest {
 
     private void assertRecentListsScopedToCurrentUser() {
         verify(documentMapper).selectList(any());
-        verify(chatSessionMapper).selectList(any());
     }
 
     private void assertJdbcSqlScopedToCurrentUser() {
         assertThat(jdbcTemplate.chunkSql).contains("d.user_id = ?", "kb.user_id = ?");
         assertThat(jdbcTemplate.chunkArgs).containsExactly(USER_ID, USER_ID);
+
+        assertThat(jdbcTemplate.sessionSql).contains("cs.user_id = ?", "kb.user_id = ?", "cs.is_deleted = 0", "kb.is_deleted = 0");
+        assertThat(jdbcTemplate.sessionArgs).containsExactly(USER_ID, USER_ID);
 
         assertThat(jdbcTemplate.failedTaskSql).contains("d.user_id = ?", "kb.user_id = ?", "pt.status = 'FAILED'");
         assertThat(jdbcTemplate.failedTaskArgs).containsExactly(USER_ID, USER_ID);
@@ -141,9 +139,12 @@ class DashboardServiceImplTest {
 
     private static class RecordingJdbcTemplate extends JdbcTemplate {
         private Long chunkCount;
+        private List<ChatSession> sessions = List.of();
         private List<RecentFailedTaskVO> failedTasks = List.of();
         private String chunkSql;
         private List<Object> chunkArgs = List.of();
+        private String sessionSql;
+        private List<Object> sessionArgs = List.of();
         private String failedTaskSql;
         private List<Object> failedTaskArgs = List.of();
 
@@ -157,6 +158,11 @@ class DashboardServiceImplTest {
         @Override
         @SuppressWarnings("unchecked")
         public <T> List<T> query(String sql, RowMapper<T> rowMapper, Object... args) {
+            if (sql.contains("FROM chat_session")) {
+                this.sessionSql = sql;
+                this.sessionArgs = Arrays.asList(args);
+                return (List<T>) sessions;
+            }
             this.failedTaskSql = sql;
             this.failedTaskArgs = Arrays.asList(args);
             return (List<T>) failedTasks;

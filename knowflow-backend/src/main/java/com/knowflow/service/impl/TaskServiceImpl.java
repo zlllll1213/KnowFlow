@@ -34,12 +34,21 @@ public class TaskServiceImpl implements TaskService {
             TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
                 @Override
                 public void afterCommit() {
-                    enqueue.run();
+                    try {
+                        enqueue.run();
+                    } catch (Exception e) {
+                        log.error("解析任务事务已提交但 Redis 入队失败，Worker 周期恢复会重新投递 PENDING 任务: taskId={}, documentId={}",
+                                task.getId(), documentId, e);
+                    }
                 }
             });
             log.info("解析任务已创建，等待事务提交后入队: taskId={}, documentId={}", task.getId(), documentId);
         } else {
-            enqueue.run();
+            try {
+                enqueue.run();
+            } catch (Exception e) {
+                log.error("解析任务 Redis 入队失败: taskId={}, documentId={}", task.getId(), documentId, e);
+            }
         }
 
         return task.getId();

@@ -107,6 +107,8 @@ docker compose -p knowflow-smoke -f docker-compose.yml -f docker-compose.smoke.y
 BACKEND_URL=http://localhost:18081 RAG_URL=http://localhost:18090 ./scripts/smoke-e2e.sh
 ```
 
+隔离 smoke 覆盖文件使用 Compose `!override` 语法，需要 Docker Compose v2.23 或更高版本。
+
 ### 2. 或手动启动基础设施
 
 ```bash
