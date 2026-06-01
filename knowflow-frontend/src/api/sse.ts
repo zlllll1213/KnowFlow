@@ -1,12 +1,16 @@
 import { getToken } from '@/utils/token'
-import type { AgentResponse, ChatAskRequest, ChatMessageVO, RagSourceChunk } from '@/types/chat'
+import type { AgentResponse, ChatAskRequest, ChatStreamDone, RagSourceChunk } from '@/types/chat'
 
 export interface AskStreamCallbacks {
   onToken?: (token: string) => void
   onSources?: (sources: RagSourceChunk[]) => void
-  onDone?: (message: ChatMessageVO | AgentResponse) => void
+  onDone?: (message: ChatStreamDone) => void
   onMeta?: (meta: Partial<AgentResponse>) => void
   onError?: (message: string) => void
+}
+
+export interface AskStreamOptions {
+  signal?: AbortSignal
 }
 
 export interface ParsedSseEvent {
@@ -63,7 +67,12 @@ function dispatchSseEvent(parsed: ParsedSseEvent, callbacks: AskStreamCallbacks)
   return null
 }
 
-export async function streamRequest<TDone>(path: string, data: ChatAskRequest, callbacks: AskStreamCallbacks = {}): Promise<TDone> {
+export async function streamRequest<TDone>(
+  path: string,
+  data: ChatAskRequest,
+  callbacks: AskStreamCallbacks = {},
+  options: AskStreamOptions = {},
+): Promise<TDone> {
   const baseURL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8081'
   const token = getToken()
   const response = await fetch(`${baseURL}${path}`, {
@@ -73,6 +82,7 @@ export async function streamRequest<TDone>(path: string, data: ChatAskRequest, c
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
     body: JSON.stringify(data),
+    signal: options.signal,
   })
 
   if (!response.ok || !response.body) {

@@ -135,6 +135,19 @@ describe('streamRequest', () => {
     expect(callbacks.onSources).toHaveBeenCalledWith([source])
   })
 
+  it('passes the abort signal to fetch', async () => {
+    const controller = new AbortController()
+    const fetchMock = mockFetchWithChunks([
+      event('done', { id: 1, role: 'assistant', content: 'done', createdAt: '2026-06-01T00:00:00' }),
+    ])
+
+    await streamRequest('/api/chat/ask/stream', request, {}, { signal: controller.signal })
+
+    expect(fetchMock).toHaveBeenCalledWith('http://localhost:8081/api/chat/ask/stream', expect.objectContaining({
+      signal: controller.signal,
+    }))
+  })
+
   it('rejects and invokes onError when the stream emits an error event', async () => {
     const callbacks = { onError: vi.fn() }
     mockFetchWithChunks([

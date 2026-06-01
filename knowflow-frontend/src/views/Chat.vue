@@ -69,11 +69,15 @@
             @keydown.ctrl.enter="sendMessage"
           />
           <el-button
+            v-if="!answering"
             type="primary" class="send-btn"
-            :loading="answering" :disabled="!inputText.trim()"
+            :disabled="!inputText.trim()"
             @click="sendMessage"
           >
             <el-icon><Promotion /></el-icon>
+          </el-button>
+          <el-button v-else type="danger" plain class="send-btn" @click="cancelActiveStream(true)">
+            <el-icon><Close /></el-icon>
           </el-button>
         </div>
       </template>
@@ -96,7 +100,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, nextTick, watch } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus/es/components/message/index.mjs'
 import ChatMessage from '@/components/ChatMessage.vue'
@@ -105,6 +109,7 @@ import AgentTracePanel from '@/components/AgentTracePanel.vue'
 import { getKbList } from '@/api/kb'
 import { createSession, listSessions, askQuestionStream, askAgentStream, getChatHistory } from '@/api/chat'
 import type { KbVO } from '@/types/kb'
+import { isAgentResponse } from '@/types/chat'
 import type { AgentResponse, AgentTraceStep, ChatSessionVO, ChatMessageVO, RagSourceChunk } from '@/types/chat'
 
 const route = useRoute()
@@ -122,6 +127,7 @@ const agentConfidence = ref<number | null>(null)
 const agentIntent = ref<AgentResponse['intent'] | string | null>(null)
 const agentLatencyMs = ref<number | null>(null)
 const messagesRef = ref<HTMLElement>()
+const streamController = ref<AbortController | null>(null)
 
 const currentKbName = computed(() => kbs.value.find(k => k.id === selectedKbId.value)?.name ?? '')
 
@@ -134,7 +140,12 @@ onMounted(async () => {
   }
 })
 
+onBeforeUnmount(() => {
+  cancelActiveStream(false)
+})
+
 async function onKbChange() {
+  cancelActiveStream(false)
   sessions.value = []
   currentSession.value = null
   messages.value = []
@@ -149,6 +160,7 @@ async function loadSessions() {
 }
 
 async function selectSession(s: ChatSessionVO) {
+  cancelActiveStream(false)
   currentSession.value = s
   messages.value = (await getChatHistory(s.id).catch((e: unknown) => { console.error('加载聊天历史失败', e); return { records: [], total: 0 } })).records
   resetEvidence()
@@ -165,6 +177,10 @@ async function createNewSession() {
 }
 
 async function sendMessage() {
+  if (answering.value) {
+    cancelActiveStream(true)
+    return
+  }
   if (!inputText.value.trim() || !currentSession.value || !selectedKbId.value) return
   const question = inputText.value.trim()
   inputText.value = ''
@@ -191,7 +207,10 @@ async function sendMessage() {
   messages.value.push(assistantMsg)
   scrollToBottom()
 
+  let controller: AbortController | null = null
   try {
+    controller = new AbortController()
+    streamController.value = controller
     const stream = agentMode.value ? askAgentStream : askQuestionStream
     const reply = await stream(
       {
@@ -219,7 +238,7 @@ async function sendMessage() {
         },
         onDone: (message) => {
           const idx = messages.value.findIndex(m => m.id === assistantMsg.id)
-          const normalized: ChatMessageVO = 'answer' in message
+          const normalized: ChatMessageVO = isAgentResponse(message)
             ? {
                 ...assistantMsg,
                 content: message.answer,
@@ -231,23 +250,45 @@ async function sendMessage() {
             : message
           if (idx >= 0) messages.value[idx] = normalized
           sources.value = normalized.sources ?? sources.value
-          if ('trace' in message) {
+          if (isAgentResponse(message)) {
             agentTrace.value = message.trace ?? agentTrace.value
             agentConfidence.value = message.confidence
             agentIntent.value = message.intent
             agentLatencyMs.value = message.latencyMs ?? agentLatencyMs.value
           }
         },
-      }
+      },
+      { signal: controller.signal }
     )
-    if (!assistantMsg.content) assistantMsg.content = 'answer' in reply ? reply.answer : reply.content
+    if (!assistantMsg.content) assistantMsg.content = isAgentResponse(reply) ? reply.answer : reply.content
     scrollToBottom()
   } catch (e: any) {
+    if ((controller?.signal.aborted ?? false) || isAbortError(e)) {
+      const idx = messages.value.findIndex(m => m.id === assistantMsg.id)
+      if (idx >= 0 && assistantMsg.content.trim()) {
+        assistantMsg.content = `${assistantMsg.content}\n\n已停止生成。`
+      } else {
+        messages.value = messages.value.filter(m => m.id !== assistantMsg.id)
+      }
+      return
+    }
     messages.value = messages.value.filter(m => m.id !== assistantMsg.id)
     ElMessage.error(e.message || '问答失败')
   } finally {
     answering.value = false
+    if (streamController.value === controller) streamController.value = null
   }
+}
+
+function cancelActiveStream(showMessage = true) {
+  const controller = streamController.value
+  if (!controller || controller.signal.aborted) return
+  controller.abort()
+  if (showMessage) ElMessage.info('已停止生成')
+}
+
+function isAbortError(error: unknown) {
+  return typeof error === 'object' && error !== null && 'name' in error && error.name === 'AbortError'
 }
 
 async function scrollToBottom() {

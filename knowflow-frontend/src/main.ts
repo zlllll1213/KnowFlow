@@ -10,6 +10,7 @@ import { ElLoading } from 'element-plus/es/components/loading/index.mjs'
 import { ElOption, ElSelect } from 'element-plus/es/components/select/index.mjs'
 import { ElProgress } from 'element-plus/es/components/progress/index.mjs'
 import { ElSkeleton } from 'element-plus/es/components/skeleton/index.mjs'
+import { ElSwitch } from 'element-plus/es/components/switch/index.mjs'
 import { ElTable, ElTableColumn } from 'element-plus/es/components/table/index.mjs'
 import { ElTooltip } from 'element-plus/es/components/tooltip/index.mjs'
 import {
@@ -17,6 +18,7 @@ import {
   ChatDotRound,
   Check,
   CircleCheck,
+  Close,
   Clock,
   Collection,
   Connection,
@@ -57,6 +59,7 @@ const elementComponents = [
   ElProgress,
   ElSelect,
   ElSkeleton,
+  ElSwitch,
   ElTable,
   ElTableColumn,
   ElTooltip,
@@ -67,6 +70,7 @@ const iconComponents = {
   ChatDotRound,
   Check,
   CircleCheck,
+  Close,
   Clock,
   Collection,
   Connection,

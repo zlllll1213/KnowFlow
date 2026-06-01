@@ -2,7 +2,7 @@
 
 ## Staged Execution Status · 2026-06-01
 
-**前九个阶段已完成。** 第九阶段完成前端 SSE 契约测试、CI 单测接入与 Vite/esbuild 依赖风险收口；RAG 与 Agent 主链路已通过端到端 smoke，前端流式协议也有单元测试兜底。
+**前十个阶段已完成。** 第十阶段完成 Chat 前端运行时 smoke、SSE 主动取消能力和 Agent 响应类型收紧；RAG 与 Agent 主链路已通过端到端 smoke，前端流式协议也有单元测试兜底。
 
 ### 第一阶段：稳定 RAG 主链路 ✅
 
@@ -87,11 +87,20 @@
 - 升级 `vite` 到 `8.0.15`、`@vitejs/plugin-vue` 到 `6.0.7`、`vitest` 到 `4.1.7`，清理 Vite/esbuild dev-server 审计风险。
 - 适配 Vite 8 / Rolldown 的 `manualChunks` 配置，将对象写法改为函数写法，前端生产构建恢复通过。
 
+### 第十阶段：Chat 运行时体验与 SSE 取消收口 ✅
+
+- `streamRequest` 新增 `AskStreamOptions.signal`，`askQuestionStream` 和 `askAgentStream` 透传 `AbortSignal`，为页面切换、会话切换和停止生成提供底层能力。
+- Chat 页新增当前流式请求的 `AbortController` 管理：切换知识库、切换会话、组件卸载时会静默取消正在进行的 SSE；生成中发送按钮切换为停止按钮，用户可主动停止。
+- Agent/RAG 响应判断从 `'answer' in message` / `'trace' in message` 改为 `isAgentResponse` 显式 type guard，并新增单元测试覆盖普通消息和 Agent 响应边界。
+- 浏览器 smoke 发现 Chat 页使用了 `<el-switch>` 但未注册 `ElSwitch`，导致运行时 warning；已在 `main.ts` 注册，Agent/RAG 切换控件恢复为 Element Plus 组件。
+- 使用隔离 smoke 后端 + 新建临时用户/知识库/文档/会话，在浏览器中验证 Chat 普通 RAG 模式和 Agent 模式：sources 面板、confidence、intent、Agent Trace 均正常渲染。
+- Browser post-fix log window 未出现新的 error/warn；历史日志中保留了修复前的 `el-switch` warning 记录。
+
 ### 下一步
 
-- 第十阶段建议做前端运行时体验验收：用浏览器检查 Chat 普通模式 / Agent 模式 / SourcePanel / AgentTracePanel 的真实渲染，补一个最小 Playwright 或 Browser smoke。
-- 可继续补 `streamRequest` 的 `AbortSignal` 支持，让用户切换页面或取消提问时主动中断 SSE。
-- 可进一步收紧 Chat.vue 的 Agent/RAG 类型判断，把当前 duck typing 改成显式 type guard。
+- 第十一阶段建议把浏览器 smoke 自动化成轻量脚本，固定覆盖登录、选择知识库、RAG 提问、Agent 提问、sources/trace 渲染断言。
+- 可继续优化移动端 Agent 信息展示；当前窄屏下右侧 SourcePanel / AgentTracePanel 会按既有响应式规则隐藏。
+- 可将 Reasonix 审查中较耗时的前端 review 拆成更小主题执行，避免交互式会话长时间无最终报告。
 
 ## P0: 真实闭环与可信度
 
@@ -139,6 +148,11 @@
 
 ## Verification
 
+- Current follow-up `cd knowflow-frontend && npm run test:unit`: passed, 10 tests.
+- Current follow-up `cd knowflow-frontend && npm run build`: passed after `ElSwitch` registration and AbortSignal/type-guard changes; Rolldown still reports third-party `@vueuse/core` pure annotation warnings but exits 0.
+- Current follow-up Browser smoke on `http://127.0.0.1:15174/chat?kbId=7`: passed for RAG answer + sources and Agent answer + sources + confidence + trace on desktop viewport.
+- Current follow-up Browser post-fix console window: passed, no new error/warn after reloading Chat with `ElSwitch` registered.
+- Current follow-up `git diff --check`: passed after Chat/SSE cancellation changes.
 - Current follow-up `cd knowflow-frontend && npm run test:unit`: passed, 7 tests.
 - Current follow-up `cd knowflow-frontend && npm run build`: passed on Vite 8.0.15; Rolldown reported third-party `@vueuse/core` pure annotation warnings but exited 0.
 - Current follow-up `cd knowflow-frontend && npm audit --omit=dev`: passed, 0 vulnerabilities.
