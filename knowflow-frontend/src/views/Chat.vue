@@ -59,6 +59,36 @@
             <div class="thinking-dot" /><div class="thinking-dot" /><div class="thinking-dot" />
           </div>
         </div>
+        <div v-if="hasEvidence" class="mobile-evidence-panel">
+          <div class="mobile-evidence-tabs">
+            <button
+              type="button"
+              :class="{ active: evidenceTab === 'sources' }"
+              @click="evidenceTab = 'sources'"
+            >
+              引用来源
+              <span v-if="sources.length">{{ sources.length }}</span>
+            </button>
+            <button
+              v-if="hasTrace"
+              type="button"
+              :class="{ active: evidenceTab === 'trace' }"
+              @click="evidenceTab = 'trace'"
+            >
+              Agent Trace
+            </button>
+          </div>
+          <div class="mobile-evidence-body">
+            <SourcePanel v-if="evidenceTab === 'sources'" :sources="sources" />
+            <AgentTracePanel
+              v-else
+              :trace="agentTrace"
+              :confidence="agentConfidence"
+              :intent="agentIntent"
+              :latency-ms="agentLatencyMs"
+            />
+          </div>
+        </div>
         <div class="input-area">
           <el-input
             v-model="inputText"
@@ -100,7 +130,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onBeforeUnmount, nextTick } from 'vue'
+import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus/es/components/message/index.mjs'
 import ChatMessage from '@/components/ChatMessage.vue'
@@ -128,8 +158,15 @@ const agentIntent = ref<AgentResponse['intent'] | string | null>(null)
 const agentLatencyMs = ref<number | null>(null)
 const messagesRef = ref<HTMLElement>()
 const streamController = ref<AbortController | null>(null)
+const evidenceTab = ref<'sources' | 'trace'>('sources')
 
 const currentKbName = computed(() => kbs.value.find(k => k.id === selectedKbId.value)?.name ?? '')
+const hasTrace = computed(() => agentMode.value || agentTrace.value.length > 0)
+const hasEvidence = computed(() => sources.value.length > 0 || hasTrace.value)
+
+watch(agentMode, (enabled) => {
+  evidenceTab.value = enabled && !sources.value.length ? 'trace' : 'sources'
+})
 
 onMounted(async () => {
   kbs.value = (await getKbList().catch((e: unknown) => { console.error('加载知识库列表失败', e); return { records: [], total: 0 } })).records
@@ -196,6 +233,7 @@ async function sendMessage() {
 
   answering.value = true
   resetEvidence()
+  if (agentMode.value) evidenceTab.value = 'trace'
   const assistantMsg: ChatMessageVO = {
     id: -Date.now(),
     role: 'assistant',
@@ -226,6 +264,8 @@ async function sendMessage() {
         onSources: (items) => {
           sources.value = items ?? []
           assistantMsg.sources = sources.value
+          if (sources.value.length && !agentMode.value) evidenceTab.value = 'sources'
+          scrollToBottom()
         },
         onMeta: (meta) => {
           if (!agentMode.value) return
@@ -233,8 +273,10 @@ async function sendMessage() {
           agentConfidence.value = typeof meta.confidence === 'number' ? meta.confidence : agentConfidence.value
           agentTrace.value = meta.trace ?? agentTrace.value
           agentLatencyMs.value = typeof meta.latencyMs === 'number' ? meta.latencyMs : agentLatencyMs.value
+          if (agentTrace.value.length) evidenceTab.value = 'trace'
           assistantMsg.intent = agentIntent.value ?? undefined
           assistantMsg.confidence = agentConfidence.value ?? undefined
+          scrollToBottom()
         },
         onDone: (message) => {
           const idx = messages.value.findIndex(m => m.id === assistantMsg.id)
@@ -256,6 +298,7 @@ async function sendMessage() {
             agentIntent.value = message.intent
             agentLatencyMs.value = message.latencyMs ?? agentLatencyMs.value
           }
+          scrollToBottom()
         },
       },
       { signal: controller.signal }
@@ -296,6 +339,13 @@ async function scrollToBottom() {
   if (messagesRef.value) {
     messagesRef.value.scrollTop = messagesRef.value.scrollHeight
   }
+  if (isMobileChatViewport()) {
+    window.scrollTo({ top: document.documentElement.scrollHeight, behavior: 'auto' })
+  }
+}
+
+function isMobileChatViewport() {
+  return typeof window !== 'undefined' && window.matchMedia('(max-width: 768px)').matches
 }
 
 function formatDate(d: string) {
@@ -308,6 +358,7 @@ function resetEvidence() {
   agentConfidence.value = null
   agentIntent.value = null
   agentLatencyMs.value = null
+  evidenceTab.value = 'sources'
 }
 </script>
 
@@ -379,10 +430,68 @@ function resetEvidence() {
 .source-stack {
   height: 100%; display: grid; grid-template-rows: minmax(0, 1fr) minmax(220px, 42%);
 }
+.mobile-evidence-panel {
+  display: none;
+}
 
 @media (max-width: 1024px) {
   .source-column {
     display: none;
+  }
+
+  .mobile-evidence-panel {
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+    max-height: 36svh;
+    margin: 0 24px 12px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    background: var(--color-surface);
+    overflow: hidden;
+  }
+
+  .mobile-evidence-tabs {
+    display: flex;
+    gap: 6px;
+    padding: 8px;
+    border-bottom: 1px solid var(--color-border);
+    background: var(--color-bg);
+  }
+
+  .mobile-evidence-tabs button {
+    min-width: 0;
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--color-text-secondary);
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 6px 10px;
+    transition: background .15s, border-color .15s, color .15s;
+  }
+
+  .mobile-evidence-tabs button:hover,
+  .mobile-evidence-tabs button.active {
+    border-color: var(--color-border);
+    background: var(--color-surface);
+    color: var(--color-accent);
+  }
+
+  .mobile-evidence-tabs span {
+    margin-left: 4px;
+    color: var(--color-text-muted);
+  }
+
+  .mobile-evidence-body {
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .mobile-evidence-body :deep(.source-panel),
+  .mobile-evidence-body :deep(.agent-trace-panel) {
+    height: min(32svh, 320px);
   }
 }
 
@@ -437,6 +546,16 @@ function resetEvidence() {
   .input-area {
     padding: 12px 16px calc(14px + env(safe-area-inset-bottom));
     gap: 8px;
+  }
+
+  .mobile-evidence-panel {
+    max-height: 34svh;
+    margin: 0 16px 10px;
+  }
+
+  .mobile-evidence-body :deep(.source-panel),
+  .mobile-evidence-body :deep(.agent-trace-panel) {
+    height: min(30svh, 260px);
   }
 
   .send-btn {

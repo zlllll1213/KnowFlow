@@ -2,7 +2,7 @@
 
 ## Staged Execution Status · 2026-06-01
 
-**前十一个阶段已完成。** 第十一阶段完成 DeepSeek API Key 安全接入收口：LLM Key 与 Embedding Key 分离、DeepSeek 默认模型更新、thinking 默认关闭；RAG 与 Agent 主链路已通过端到端 smoke，前端流式协议也有单元测试兜底。
+**前十二个阶段已完成。** 第十二阶段完成移动端 Chat / Agent 演示体验补强：窄屏下不再隐藏引用来源和 Agent Trace，普通 RAG 默认展示 sources，Agent 模式默认展示 trace；RAG 与 Agent 主链路已通过端到端 smoke，前端流式协议也有单元测试兜底。
 
 ### 第一阶段：稳定 RAG 主链路 ✅
 
@@ -106,11 +106,20 @@
 - 更新根 README、Go RAG README、部署文档和环境变量示例，说明 DeepSeek Key 只能在服务端环境变量中配置，不能进入前端 `VITE_*`、源码、文档或 Git 历史。
 - 新增 Go 单元测试覆盖：DeepSeek 默认 endpoint/model/thinking、embedding 不继承 LLM Key、拒绝 DeepSeek embedding provider；Worker 配置同步禁用 DeepSeek embedding。
 
+### 第十二阶段：移动端 Agent 演示体验补强 ✅
+
+- Reasonix 联合审查会话继续保持只审查、不改文件、不读取 `.env` 的协作边界；本轮先落地优化文档中已列出的窄屏 Agent 信息展示缺口。
+- Chat 页新增移动端证据面板，在 `max-width: 1024px` 下复用现有 `SourcePanel` 与 `AgentTracePanel`，桌面端右侧 sources/trace 面板保持不变。
+- 移动端证据面板提供“引用来源 / Agent Trace”标签切换：普通 RAG 流式回答默认展示 sources，Agent 模式发送问题后默认切到 trace，保留 sources 标签用于继续查看引用来源。
+- sources、meta、done 事件到达时触发滚动收口；在窄屏页面中让引用来源或 Agent Trace 出现后尽量进入视口，减少演示时手动寻找 trace 的成本。
+- 使用临时无头 Chrome 390x844 视口完成 browser smoke：临时用户、知识库、文档、会话均通过后端 API 创建，JWT 只写入临时浏览器 localStorage，不打印 token，不读取或输出 `.env`。
+- 验证普通 RAG 窄屏下 sources 面板可见，Agent 模式下 active tab 为 `Agent Trace`，trace 包含 Router / Retriever / Answer / Citation Guard。
+
 ### 下一步
 
-- 第十二阶段建议把浏览器 smoke 自动化成轻量脚本，固定覆盖登录、选择知识库、RAG 提问、Agent 提问、sources/trace 渲染断言。
-- 可继续优化移动端 Agent 信息展示；当前窄屏下右侧 SourcePanel / AgentTracePanel 会按既有响应式规则隐藏。
-- 接入真实 DeepSeek Key 后，建议先只启用 `RAG_LLM_PROVIDER=deepseek`，embedding 继续用 `mock` 或显式配置与 Worker 一致的 embedding provider，再跑 smoke。
+- 第十三阶段建议把本轮临时浏览器 smoke 固化为仓库脚本，覆盖登录、选择知识库、RAG 提问、Agent 提问、sources/trace 视口断言，并保证不打印 token / API Key。
+- 继续观察移动端 Chat 的信息密度：如果后续演示问题更长，可考虑把移动端证据面板做成底部抽屉或可折叠面板，进一步降低长回答时的滚动成本。
+- DeepSeek Key 已可用于真实 RAG / Agent smoke；后续仍建议保持 `RAG_EMBEDDING_PROVIDER` 与 Worker embedding provider 显式一致，避免 LLM Key 被误用于 embedding。
 
 ## P0: 真实闭环与可信度
 
@@ -162,6 +171,10 @@
 - Current follow-up with local ignored `.env` DeepSeek key: `BACKEND_URL=http://localhost:18081 RAG_URL=http://localhost:18090 TIMEOUT_SECONDS=120 QUESTION='请用一句话说明 KnowFlow 是什么。' ./scripts/smoke-e2e.sh`: passed for real DeepSeek RAG stream and Agent stream.
 - Current follow-up `cd knowflow-frontend && npm run test:unit`: passed, 10 tests.
 - Current follow-up `cd knowflow-frontend && npm run build`: passed after `ElSwitch` registration and AbortSignal/type-guard changes; Rolldown still reports third-party `@vueuse/core` pure annotation warnings but exits 0.
+- Current follow-up mobile browser smoke on `http://127.0.0.1:15174/chat`: passed at 390x844; RAG sources panel visible, Agent Trace active with Router/Retriever/Answer/Citation Guard.
+- Current follow-up `cd knowflow-frontend && npm run test:unit`: passed, 10 tests after mobile evidence panel changes.
+- Current follow-up `cd knowflow-frontend && npm run build`: passed after mobile evidence panel changes; Rolldown still reports third-party `@vueuse/core` pure annotation warnings but exits 0.
+- Current follow-up `git diff --check`: passed after mobile evidence panel changes.
 - Current follow-up Browser smoke on `http://127.0.0.1:15174/chat?kbId=7`: passed for RAG answer + sources and Agent answer + sources + confidence + trace on desktop viewport.
 - Current follow-up Browser post-fix console window: passed, no new error/warn after reloading Chat with `ElSwitch` registered.
 - Current follow-up `git diff --check`: passed after Chat/SSE cancellation changes.
