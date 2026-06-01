@@ -58,6 +58,8 @@ WORKER_EMBEDDING_BATCH_SIZE=32
 WORKER_EMBEDDING_TIMEOUT_SECONDS=60
 ```
 
+`WORKER_EMBEDDING_PROVIDER` 仅支持 `mock`、`openai`、`ollama`。DeepSeek API Key 只用于 Go RAG 的 LLM 调用，不要放到 Worker embedding 配置里。
+
 任务可靠性配置：
 
 ```env

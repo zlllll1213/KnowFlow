@@ -87,9 +87,9 @@ class Config:
             if not self.minio_bucket:
                 errors.append("WORKER_MINIO_BUCKET 不能为空")
 
-        if self.embedding_provider not in {"mock", "openai", "deepseek", "ollama"}:
-            errors.append("WORKER_EMBEDDING_PROVIDER 仅支持 mock/openai/deepseek/ollama")
-        if self.embedding_provider in {"openai", "deepseek"} and not self.embedding_api_key:
+        if self.embedding_provider not in {"mock", "openai", "ollama"}:
+            errors.append("WORKER_EMBEDDING_PROVIDER 仅支持 mock/openai/ollama，暂不支持 deepseek embedding")
+        if self.embedding_provider == "openai" and not self.embedding_api_key:
             errors.append("WORKER_EMBEDDING_API_KEY 不能为空")
         if self.embedding_dim <= 0:
             errors.append("WORKER_EMBEDDING_DIM 必须大于 0")

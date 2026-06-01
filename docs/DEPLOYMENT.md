@@ -51,7 +51,12 @@ Key variables:
 - `KNOWFLOW_RAG_FALLBACK_ENABLED`: default `false`.
 - `WORKER_TASK_RECOVERY_INTERVAL_SECONDS`: default `60`, re-enqueues recoverable `PENDING` / stale processing tasks.
 - `RAG_LLM_PROVIDER`: `mock`, `openai`, `deepseek`, or `ollama`.
-- `RAG_EMBEDDING_PROVIDER`: `mock`, `openai`, `deepseek`, or `ollama`.
+- `RAG_LLM_API_KEY`: set only on the server side; never commit real keys.
+- `RAG_LLM_BASE_URL`: DeepSeek default is `https://api.deepseek.com`.
+- `RAG_LLM_MODEL`: DeepSeek default is `deepseek-v4-flash`.
+- `RAG_LLM_THINKING_ENABLED`: default `false`; set `true` only when you intentionally want DeepSeek thinking mode.
+- `RAG_EMBEDDING_PROVIDER`: `mock`, `openai`, or `ollama`; DeepSeek is not used for embeddings.
+- `RAG_EMBEDDING_API_KEY`: independent from `RAG_LLM_API_KEY` to avoid sending an LLM key to the wrong endpoint.
 - `WORKER_STORAGE_TYPE`: `local` or `minio`.
 
 ## Smoke Test

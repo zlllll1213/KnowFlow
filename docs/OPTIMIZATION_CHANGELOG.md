@@ -2,7 +2,7 @@
 
 ## Staged Execution Status · 2026-06-01
 
-**前十个阶段已完成。** 第十阶段完成 Chat 前端运行时 smoke、SSE 主动取消能力和 Agent 响应类型收紧；RAG 与 Agent 主链路已通过端到端 smoke，前端流式协议也有单元测试兜底。
+**前十一个阶段已完成。** 第十一阶段完成 DeepSeek API Key 安全接入收口：LLM Key 与 Embedding Key 分离、DeepSeek 默认模型更新、thinking 默认关闭；RAG 与 Agent 主链路已通过端到端 smoke，前端流式协议也有单元测试兜底。
 
 ### 第一阶段：稳定 RAG 主链路 ✅
 
@@ -96,11 +96,21 @@
 - 使用隔离 smoke 后端 + 新建临时用户/知识库/文档/会话，在浏览器中验证 Chat 普通 RAG 模式和 Agent 模式：sources 面板、confidence、intent、Agent Trace 均正常渲染。
 - Browser post-fix log window 未出现新的 error/warn；历史日志中保留了修复前的 `el-switch` warning 记录。
 
+### 第十一阶段：DeepSeek API Key 安全接入 ✅
+
+- 核对 DeepSeek 官方 API 文档后，将 Go RAG DeepSeek 默认 base URL 更新为 `https://api.deepseek.com`，默认模型更新为 `deepseek-v4-flash`，避免继续默认使用即将废弃的 `deepseek-chat`。
+- 新增 `RAG_LLM_THINKING_ENABLED`，DeepSeek thinking 默认关闭，普通 RAG / Agent 演示默认走更低延迟、低成本的非 thinking 模式；需要推理模式时可显式设为 `true`。
+- 修复关键安全风险：`RAG_EMBEDDING_PROVIDER` 不再默认继承 `RAG_LLM_PROVIDER`，`RAG_EMBEDDING_API_KEY` 不再继承 `RAG_LLM_API_KEY`，避免 DeepSeek LLM Key 被误发到 embedding endpoint。
+- 明确禁止 `RAG_EMBEDDING_PROVIDER=deepseek` 和 `WORKER_EMBEDDING_PROVIDER=deepseek`，配置校验会返回清晰错误，提示使用 `mock`、`openai` 或 `ollama`。
+- `.gitignore` 增加 `.env`，真实 API Key 可放在本地 `.env`，不会被误提交；`.env.example` 继续作为无密钥模板保留。
+- 更新根 README、Go RAG README、部署文档和环境变量示例，说明 DeepSeek Key 只能在服务端环境变量中配置，不能进入前端 `VITE_*`、源码、文档或 Git 历史。
+- 新增 Go 单元测试覆盖：DeepSeek 默认 endpoint/model/thinking、embedding 不继承 LLM Key、拒绝 DeepSeek embedding provider；Worker 配置同步禁用 DeepSeek embedding。
+
 ### 下一步
 
-- 第十一阶段建议把浏览器 smoke 自动化成轻量脚本，固定覆盖登录、选择知识库、RAG 提问、Agent 提问、sources/trace 渲染断言。
+- 第十二阶段建议把浏览器 smoke 自动化成轻量脚本，固定覆盖登录、选择知识库、RAG 提问、Agent 提问、sources/trace 渲染断言。
 - 可继续优化移动端 Agent 信息展示；当前窄屏下右侧 SourcePanel / AgentTracePanel 会按既有响应式规则隐藏。
-- 可将 Reasonix 审查中较耗时的前端 review 拆成更小主题执行，避免交互式会话长时间无最终报告。
+- 接入真实 DeepSeek Key 后，建议先只启用 `RAG_LLM_PROVIDER=deepseek`，embedding 继续用 `mock` 或显式配置与 Worker 一致的 embedding provider，再跑 smoke。
 
 ## P0: 真实闭环与可信度
 
@@ -148,6 +158,7 @@
 
 ## Verification
 
+- Current follow-up `cd knowflow-rag-go && go test ./...`: passed after DeepSeek secure config changes.
 - Current follow-up `cd knowflow-frontend && npm run test:unit`: passed, 10 tests.
 - Current follow-up `cd knowflow-frontend && npm run build`: passed after `ElSwitch` registration and AbortSignal/type-guard changes; Rolldown still reports third-party `@vueuse/core` pure annotation warnings but exits 0.
 - Current follow-up Browser smoke on `http://127.0.0.1:15174/chat?kbId=7`: passed for RAG answer + sources and Agent answer + sources + confidence + trace on desktop viewport.

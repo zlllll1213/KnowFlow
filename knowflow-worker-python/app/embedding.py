@@ -21,7 +21,7 @@ def generate_embeddings(chunks: list[DocumentChunk]) -> None:
 
     if provider == "mock":
         _mock_embed(chunks)
-    elif provider in {"openai", "deepseek"}:
+    elif provider == "openai":
         _openai_compatible_embed(chunks)
     elif provider == "ollama":
         _ollama_embed(chunks)

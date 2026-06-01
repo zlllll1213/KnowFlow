@@ -15,6 +15,7 @@ type Config struct {
 	LLMAPIKey         string
 	LLMBaseURL        string
 	LLMModel          string
+	LLMThinking       bool
 	RequestTimeout    time.Duration
 	EmbeddingProvider string
 	EmbeddingAPIKey   string
@@ -27,16 +28,17 @@ type Config struct {
 
 func Load() *Config {
 	return &Config{
-		Port:              getEnv("RAG_PORT", "8090"),
-		DBDSN:             getEnv("RAG_DB_DSN", "postgres://knowflow:knowflow123@localhost:5432/knowflow?sslmode=disable"),
-		LLMProvider:       getEnv("RAG_LLM_PROVIDER", "mock"),
-		LLMAPIKey:         getEnv("RAG_LLM_API_KEY", ""),
-		LLMBaseURL:        getEnv("RAG_LLM_BASE_URL", ""),
-		LLMModel:          getEnv("RAG_LLM_MODEL", ""),
-		RequestTimeout:    time.Duration(getEnvInt("RAG_REQUEST_TIMEOUT_SECONDS", 60)) * time.Second,
-		// embedding provider 默认跟随 LLM provider；单独设置 RAG_EMBEDDING_PROVIDER 可覆盖
-		EmbeddingProvider: getEnv("RAG_EMBEDDING_PROVIDER", getEnv("RAG_LLM_PROVIDER", "mock")),
-		EmbeddingAPIKey:   getEnv("RAG_EMBEDDING_API_KEY", getEnv("RAG_LLM_API_KEY", "")),
+		Port:           getEnv("RAG_PORT", "8090"),
+		DBDSN:          getEnv("RAG_DB_DSN", "postgres://knowflow:knowflow123@localhost:5432/knowflow?sslmode=disable"),
+		LLMProvider:    getEnv("RAG_LLM_PROVIDER", "mock"),
+		LLMAPIKey:      getEnv("RAG_LLM_API_KEY", ""),
+		LLMBaseURL:     getEnv("RAG_LLM_BASE_URL", ""),
+		LLMModel:       getEnv("RAG_LLM_MODEL", ""),
+		LLMThinking:    getEnvBool("RAG_LLM_THINKING_ENABLED", false),
+		RequestTimeout: time.Duration(getEnvInt("RAG_REQUEST_TIMEOUT_SECONDS", 60)) * time.Second,
+		// Embedding 必须独立配置，避免把 LLM API Key 误发到不匹配的 embedding endpoint。
+		EmbeddingProvider: getEnv("RAG_EMBEDDING_PROVIDER", "mock"),
+		EmbeddingAPIKey:   getEnv("RAG_EMBEDDING_API_KEY", ""),
 		EmbeddingBaseURL:  getEnv("RAG_EMBEDDING_BASE_URL", ""),
 		EmbeddingModel:    getEnv("RAG_EMBEDDING_MODEL", "text-embedding-3-small"),
 		EmbeddingDim:      getEnvInt("RAG_EMBEDDING_DIM", 1536),
@@ -67,10 +69,10 @@ func (c *Config) Validate() error {
 	if c.RequestTimeout <= 0 {
 		return fmt.Errorf("RAG_REQUEST_TIMEOUT_SECONDS 必须大于 0")
 	}
-	if err := validateProvider("RAG_LLM_PROVIDER", c.LLMProvider, c.LLMAPIKey); err != nil {
+	if err := validateLLMProvider(c.LLMProvider, c.LLMAPIKey); err != nil {
 		return err
 	}
-	if err := validateProvider("RAG_EMBEDDING_PROVIDER", c.EmbeddingProvider, c.EmbeddingAPIKey); err != nil {
+	if err := validateEmbeddingProvider(c.EmbeddingProvider, c.EmbeddingAPIKey); err != nil {
 		return err
 	}
 	return nil
@@ -80,6 +82,7 @@ func (c *Config) PublicSummary() map[string]any {
 	return map[string]any{
 		"llmProvider":       c.LLMProvider,
 		"llmModel":          c.LLMModel,
+		"llmThinking":       c.LLMThinking,
 		"embeddingProvider": c.EmbeddingProvider,
 		"embeddingModel":    c.EmbeddingModel,
 		"embeddingDim":      c.EmbeddingDim,
@@ -89,17 +92,33 @@ func (c *Config) PublicSummary() map[string]any {
 	}
 }
 
-func validateProvider(envName string, provider string, apiKey string) error {
+func validateLLMProvider(provider string, apiKey string) error {
 	switch strings.ToLower(provider) {
 	case "mock", "ollama":
 		return nil
 	case "openai", "deepseek":
 		if apiKey == "" {
-			return fmt.Errorf("%s=%s 时必须配置 API key", envName, provider)
+			return fmt.Errorf("RAG_LLM_PROVIDER=%s 时必须配置 RAG_LLM_API_KEY", provider)
 		}
 		return nil
 	default:
-		return fmt.Errorf("%s 不支持: %s", envName, provider)
+		return fmt.Errorf("RAG_LLM_PROVIDER 不支持: %s", provider)
+	}
+}
+
+func validateEmbeddingProvider(provider string, apiKey string) error {
+	switch strings.ToLower(provider) {
+	case "mock", "ollama":
+		return nil
+	case "openai":
+		if apiKey == "" {
+			return fmt.Errorf("RAG_EMBEDDING_PROVIDER=%s 时必须配置 RAG_EMBEDDING_API_KEY", provider)
+		}
+		return nil
+	case "deepseek":
+		return fmt.Errorf("RAG_EMBEDDING_PROVIDER=deepseek 暂不支持；请显式使用 mock、openai 或 ollama，避免误用 DeepSeek API Key")
+	default:
+		return fmt.Errorf("RAG_EMBEDDING_PROVIDER 不支持: %s", provider)
 	}
 }
 
@@ -116,6 +135,18 @@ func getEnvInt(key string, fallback int) int {
 		return fallback
 	}
 	parsed, err := strconv.Atoi(v)
+	if err != nil {
+		return fallback
+	}
+	return parsed
+}
+
+func getEnvBool(key string, fallback bool) bool {
+	v := strings.TrimSpace(os.Getenv(key))
+	if v == "" {
+		return fallback
+	}
+	parsed, err := strconv.ParseBool(v)
 	if err != nil {
 		return fallback
 	}

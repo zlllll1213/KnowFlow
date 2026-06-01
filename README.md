@@ -327,6 +327,19 @@ Chat 页面支持普通 RAG 与 Agent 两种模式：
 - [`knowflow-worker-python/.env.example`](knowflow-worker-python/.env.example) — Worker
 - [`knowflow-rag-go/.env.example`](knowflow-rag-go/.env.example) — Go RAG
 
+DeepSeek 接入时只在服务端配置 `RAG_LLM_API_KEY`，不要写入前端变量、源码、README 或提交记录。推荐配置：
+
+```env
+RAG_LLM_PROVIDER=deepseek
+RAG_LLM_API_KEY=sk-...
+RAG_LLM_BASE_URL=https://api.deepseek.com
+RAG_LLM_MODEL=deepseek-v4-flash
+RAG_LLM_THINKING_ENABLED=false
+RAG_EMBEDDING_PROVIDER=mock
+```
+
+`RAG_EMBEDDING_PROVIDER` 不会继承 DeepSeek Key；如需真实向量检索，请单独配置 `openai` 或 `ollama` embedding，并确保 Worker 与 Go RAG 的 embedding 维度一致。
+
 ---
 
 ## License

@@ -32,10 +32,11 @@ func NewProvider(cfg *config.Config) Provider {
 		return &MockProvider{label: "Mock"}
 	case "openai", "deepseek":
 		return &OpenAICompatibleProvider{
-			apiKey:  cfg.LLMAPIKey,
-			baseURL: defaultString(cfg.LLMBaseURL, providerDefaultBaseURL(cfg.LLMProvider)),
-			model:   defaultString(cfg.LLMModel, providerDefaultModel(cfg.LLMProvider)),
-			client:  &http.Client{Timeout: cfg.RequestTimeout},
+			apiKey:       cfg.LLMAPIKey,
+			baseURL:      defaultString(cfg.LLMBaseURL, providerDefaultBaseURL(cfg.LLMProvider)),
+			model:        defaultString(cfg.LLMModel, providerDefaultModel(cfg.LLMProvider)),
+			thinkingMode: providerThinkingMode(cfg.LLMProvider, cfg.LLMThinking),
+			client:       &http.Client{Timeout: cfg.RequestTimeout},
 		}
 	case "ollama":
 		return &OllamaProvider{
@@ -78,10 +79,11 @@ func (m *MockProvider) ChatStream(ctx context.Context, messages []Message, out c
 }
 
 type OpenAICompatibleProvider struct {
-	apiKey  string
-	baseURL string
-	model   string
-	client  *http.Client
+	apiKey       string
+	baseURL      string
+	model        string
+	thinkingMode string
+	client       *http.Client
 }
 
 func (p *OpenAICompatibleProvider) Chat(ctx context.Context, messages []Message) (string, error) {
@@ -167,11 +169,15 @@ func (p *OpenAICompatibleProvider) requestBody(messages []Message, stream bool) 
 	if p.apiKey == "" {
 		return nil, fmt.Errorf("LLM API key 未配置")
 	}
-	return json.Marshal(map[string]any{
+	payload := map[string]any{
 		"model":    p.model,
 		"messages": messages,
 		"stream":   stream,
-	})
+	}
+	if p.thinkingMode != "" {
+		payload["thinking"] = map[string]string{"type": p.thinkingMode}
+	}
+	return json.Marshal(payload)
 }
 
 func (p *OpenAICompatibleProvider) newRequest(ctx context.Context, body []byte) (*http.Request, error) {
@@ -290,16 +296,26 @@ func lastUserMessage(messages []Message) string {
 
 func providerDefaultBaseURL(provider string) string {
 	if strings.EqualFold(provider, "deepseek") {
-		return "https://api.deepseek.com/v1"
+		return "https://api.deepseek.com"
 	}
 	return "https://api.openai.com/v1"
 }
 
 func providerDefaultModel(provider string) string {
 	if strings.EqualFold(provider, "deepseek") {
-		return "deepseek-chat"
+		return "deepseek-v4-flash"
 	}
 	return "gpt-4o-mini"
+}
+
+func providerThinkingMode(provider string, thinkingEnabled bool) string {
+	if !strings.EqualFold(provider, "deepseek") {
+		return ""
+	}
+	if thinkingEnabled {
+		return "enabled"
+	}
+	return "disabled"
 }
 
 func defaultString(value, fallback string) string {

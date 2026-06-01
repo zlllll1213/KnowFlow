@@ -371,8 +371,9 @@ RAG_PORT=8090
 RAG_DB_DSN=postgres://knowflow:YOUR_DB_PASS@localhost:5432/knowflow
 RAG_LLM_PROVIDER=deepseek
 RAG_LLM_API_KEY=YOUR_LLM_API_KEY
-RAG_LLM_BASE_URL=https://api.deepseek.com/v1
-RAG_LLM_MODEL=deepseek-chat
+RAG_LLM_BASE_URL=https://api.deepseek.com
+RAG_LLM_MODEL=deepseek-v4-flash
+RAG_LLM_THINKING_ENABLED=false
 RAG_EMBEDDING_PROVIDER=openai
 RAG_EMBEDDING_API_KEY=YOUR_EMBEDDING_API_KEY
 RAG_EMBEDDING_MODEL=text-embedding-3-small
@@ -613,7 +614,7 @@ CREATE TABLE IF NOT EXISTS model_config (
     id          BIGSERIAL PRIMARY KEY,
     user_id     BIGINT       NOT NULL UNIQUE,
     provider    VARCHAR(32)  NOT NULL DEFAULT 'deepseek',
-    model_name  VARCHAR(128) NOT NULL DEFAULT 'deepseek-chat',
+    model_name  VARCHAR(128) NOT NULL DEFAULT 'deepseek-v4-flash',
     api_key     VARCHAR(512),           -- 加密存储
     base_url    VARCHAR(512),
     created_at  TIMESTAMP    NOT NULL DEFAULT NOW(),

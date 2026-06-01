@@ -24,7 +24,7 @@ func NewProvider(cfg *config.Config) Provider {
 	switch strings.ToLower(cfg.EmbeddingProvider) {
 	case "", "mock":
 		return &MockProvider{dim: cfg.EmbeddingDim}
-	case "openai", "deepseek":
+	case "openai":
 		return &OpenAIProvider{
 			apiKey:  cfg.EmbeddingAPIKey,
 			baseURL: defaultString(cfg.EmbeddingBaseURL, "https://api.openai.com/v1"),
