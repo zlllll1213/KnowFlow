@@ -159,6 +159,7 @@
 ## Verification
 
 - Current follow-up `cd knowflow-rag-go && go test ./...`: passed after DeepSeek secure config changes.
+- Current follow-up with local ignored `.env` DeepSeek key: `BACKEND_URL=http://localhost:18081 RAG_URL=http://localhost:18090 TIMEOUT_SECONDS=120 QUESTION='请用一句话说明 KnowFlow 是什么。' ./scripts/smoke-e2e.sh`: passed for real DeepSeek RAG stream and Agent stream.
 - Current follow-up `cd knowflow-frontend && npm run test:unit`: passed, 10 tests.
 - Current follow-up `cd knowflow-frontend && npm run build`: passed after `ElSwitch` registration and AbortSignal/type-guard changes; Rolldown still reports third-party `@vueuse/core` pure annotation warnings but exits 0.
 - Current follow-up Browser smoke on `http://127.0.0.1:15174/chat?kbId=7`: passed for RAG answer + sources and Agent answer + sources + confidence + trace on desktop viewport.
