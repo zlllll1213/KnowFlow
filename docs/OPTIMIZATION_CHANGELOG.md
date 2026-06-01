@@ -2,7 +2,7 @@
 
 ## Staged Execution Status · 2026-06-01
 
-**前七个阶段已完成。** 第七阶段完成完整 Docker Compose 隔离 smoke 验收，并补齐 mock embedding / score NaN 防护，RAG 与 Agent 主链路已通过端到端检查。
+**前九个阶段已完成。** 第九阶段完成前端 SSE 契约测试、CI 单测接入与 Vite/esbuild 依赖风险收口；RAG 与 Agent 主链路已通过端到端 smoke，前端流式协议也有单元测试兜底。
 
 ### 第一阶段：稳定 RAG 主链路 ✅
 
@@ -77,11 +77,21 @@
 - Agent 流式早返回路径的 `meta` 不再携带 `answer`，回答文本统一通过 `token` 事件输出，前后端 SSE 契约更稳定。
 - Go Ollama embedding 支持新版 `/api/embed` + 旧版 `/api/embeddings` fallback，并补充对应测试。
 
+### 第九阶段：前端 SSE 契约测试与依赖风险收口 ✅
+
+- 继续使用 `npx reasonix@latest code --new` 做前端流式链路 review，重点审查 Chat/Agent SSE 契约、错误处理和 CI 覆盖缺口。
+- 将前端流式请求逻辑从 `chat.ts` 抽到 `src/api/sse.ts`，保留原有 `askStream` / `askAgentStream` 调用方式，降低 Chat API 文件复杂度。
+- 新增 `src/api/sse.test.ts`，覆盖 `token`、`meta`、`sources`、`done`、`error`、裸数组 sources、跨 chunk 事件、缺少 done、非法 JSON 等边界。
+- 修复错误事件回调遮蔽问题：即使 UI 层 `onError` 回调自身抛错，`streamRequest` 也会继续抛出后端原始错误，例如 `Go RAG Service unavailable, fallback disabled.`。
+- 引入 Vitest，并在 GitHub Actions 前端任务中加入 `npm run test:unit`，让 SSE 契约测试随 PR / push 自动执行。
+- 升级 `vite` 到 `8.0.15`、`@vitejs/plugin-vue` 到 `6.0.7`、`vitest` 到 `4.1.7`，清理 Vite/esbuild dev-server 审计风险。
+- 适配 Vite 8 / Rolldown 的 `manualChunks` 配置，将对象写法改为函数写法，前端生产构建恢复通过。
+
 ### 下一步
 
-- 跑完整验证：Go test、Backend test、Frontend build、Worker `--check`、隔离 smoke。
-- 将第八阶段收口修复提交并推送到 `codex/reasonix-followup`。
-- 下一阶段可补充 Chat/Agent SSE 前端单元测试，或做依赖升级专项处理 Vite/esbuild audit 提示。
+- 第十阶段建议做前端运行时体验验收：用浏览器检查 Chat 普通模式 / Agent 模式 / SourcePanel / AgentTracePanel 的真实渲染，补一个最小 Playwright 或 Browser smoke。
+- 可继续补 `streamRequest` 的 `AbortSignal` 支持，让用户切换页面或取消提问时主动中断 SSE。
+- 可进一步收紧 Chat.vue 的 Agent/RAG 类型判断，把当前 duck typing 改成显式 type guard。
 
 ## P0: 真实闭环与可信度
 
@@ -129,6 +139,11 @@
 
 ## Verification
 
+- Current follow-up `cd knowflow-frontend && npm run test:unit`: passed, 7 tests.
+- Current follow-up `cd knowflow-frontend && npm run build`: passed on Vite 8.0.15; Rolldown reported third-party `@vueuse/core` pure annotation warnings but exited 0.
+- Current follow-up `cd knowflow-frontend && npm audit --omit=dev`: passed, 0 vulnerabilities.
+- Current follow-up `cd knowflow-frontend && npm audit`: passed, 0 vulnerabilities.
+- Current follow-up `git diff --check`: passed after SSE tests and Vite config changes.
 - Current follow-up `npm run build` after status icon changes: passed.
 - Current follow-up `mvn test -q` after count/task contract changes: passed.
 - Current follow-up `npm run build` after count/task contract changes: passed.

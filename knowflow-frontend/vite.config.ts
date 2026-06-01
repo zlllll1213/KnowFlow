@@ -1,4 +1,4 @@
-import { defineConfig } from 'vite'
+import { defineConfig } from 'vitest/config'
 import vue from '@vitejs/plugin-vue'
 import { resolve } from 'path'
 
@@ -21,12 +21,24 @@ export default defineConfig({
   build: {
     rollupOptions: {
       output: {
-        manualChunks: {
-          vue: ['vue', 'vue-router', 'pinia'],
-          element: ['element-plus', '@element-plus/icons-vue'],
-          axios: ['axios'],
+        manualChunks(id) {
+          if (!id.includes('node_modules')) return undefined
+          if (id.includes('/vue') || id.includes('/vue-router') || id.includes('/pinia')) {
+            return 'vue'
+          }
+          if (id.includes('/element-plus') || id.includes('/@element-plus/icons-vue')) {
+            return 'element'
+          }
+          if (id.includes('/axios')) {
+            return 'axios'
+          }
+          return undefined
         },
       },
     },
+  },
+  test: {
+    environment: 'node',
+    include: ['src/**/*.test.ts'],
   },
 })
