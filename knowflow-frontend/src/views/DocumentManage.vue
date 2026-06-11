@@ -131,7 +131,9 @@ async function loadDocs() {
     docs.value = result.records
     total.value = result.total
     syncPollingFromDocs()
-  } catch {} finally { loading.value = false }
+  } catch (e: unknown) {
+    console.error('加载文档列表失败', e)
+  } finally { loading.value = false }
 }
 
 function onKbChange() {

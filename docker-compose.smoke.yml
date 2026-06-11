@@ -1,0 +1,39 @@
+services:
+  postgres:
+    container_name: knowflow-smoke-postgres
+    ports: !override
+      - "${SMOKE_POSTGRES_PORT:-15432}:5432"
+
+  redis:
+    container_name: knowflow-smoke-redis
+    ports: !override
+      - "${SMOKE_REDIS_PORT:-16379}:6379"
+
+  minio:
+    container_name: knowflow-smoke-minio
+    ports: !override
+      - "${SMOKE_MINIO_API_PORT:-19000}:9000"
+      - "${SMOKE_MINIO_CONSOLE_PORT:-19001}:9001"
+
+  rag:
+    container_name: knowflow-smoke-rag
+    ports: !override
+      - "${SMOKE_RAG_PORT:-18090}:8090"
+
+  backend:
+    container_name: knowflow-smoke-backend
+    ports: !override
+      - "${SMOKE_BACKEND_PORT:-18081}:8081"
+
+  worker:
+    container_name: knowflow-smoke-worker
+
+  frontend:
+    container_name: knowflow-smoke-frontend
+    build:
+      args:
+        VITE_API_BASE_URL: ${SMOKE_FRONTEND_API_BASE_URL:-http://localhost:18081}
+    environment:
+      VITE_API_BASE_URL: ${SMOKE_FRONTEND_API_BASE_URL:-http://localhost:18081}
+    ports: !override
+      - "${SMOKE_FRONTEND_PORT:-15173}:5173"

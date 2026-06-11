@@ -25,6 +25,11 @@ func main() {
 	}
 	defer ret.Close()
 
+	// 校验 embedding 维度与数据库一致
+	if err := ret.ValidateEmbeddingDim(cfg.EmbeddingDim); err != nil {
+		log.Printf("⚠ embedding 维度校验失败: %v (检索时可能出错)", err)
+	}
+
 	// 初始化 LLM Provider
 	llmProvider := llm.NewProvider(cfg)
 	embeddingProvider := embedding.NewProvider(cfg)
@@ -37,6 +42,7 @@ func main() {
 
 	// 路由
 	r := gin.Default()
+	r.Use(handler.RequestID())
 	r.GET("/health", h.Health)
 	r.POST("/rag/ask", h.Ask)
 	r.POST("/rag/ask/stream", h.AskStream)

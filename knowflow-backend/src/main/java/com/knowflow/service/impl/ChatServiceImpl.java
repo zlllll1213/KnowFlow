@@ -292,17 +292,6 @@ public class ChatServiceImpl implements ChatService {
 
     // ---------- 序列化辅助 ----------
 
-    private String serializeSources(RagResponse ragResponse) {
-        try {
-            return objectMapper.writeValueAsString(ragResponse.getSources() == null
-                    ? Collections.emptyList()
-                    : ragResponse.getSources());
-        } catch (JsonProcessingException e) {
-            log.warn("sources 序列化失败", e);
-            return "[]";
-        }
-    }
-
     @SuppressWarnings("unchecked")
     private List<com.knowflow.dto.RagSourceChunk> deserializeSources(String sourcesJson) {
         if (sourcesJson == null || sourcesJson.isEmpty()) {

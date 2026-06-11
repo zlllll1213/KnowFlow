@@ -4,6 +4,7 @@ Embedding 生成模块。
 """
 
 import logging
+import math
 from typing import Iterable
 
 import httpx
@@ -20,7 +21,7 @@ def generate_embeddings(chunks: list[DocumentChunk]) -> None:
 
     if provider == "mock":
         _mock_embed(chunks)
-    elif provider in {"openai", "deepseek"}:
+    elif provider == "openai":
         _openai_compatible_embed(chunks)
     elif provider == "ollama":
         _ollama_embed(chunks)
@@ -32,8 +33,30 @@ def generate_embeddings(chunks: list[DocumentChunk]) -> None:
 def _mock_embed(chunks: list[DocumentChunk]) -> None:
     dim = config.embedding_dim
     for chunk in chunks:
-        chunk.embedding = [0.0] * dim
-    log.warning("MOCK embedding: 生成了 %d 个零向量 (dim=%d)", len(chunks), dim)
+        chunk.embedding = _mock_embedding_for_text(chunk.content, dim)
+    log.warning("MOCK embedding: 生成了 %d 个确定性非零向量 (dim=%d)", len(chunks), dim)
+
+
+def _mock_embedding_for_text(text: str, dim: int) -> list[float]:
+    if dim <= 0:
+        raise RuntimeError(f"WORKER_EMBEDDING_DIM 必须大于 0: {dim}")
+
+    vector = [0.0] * dim
+    for char in (text or "").lower():
+        if char.isspace():
+            continue
+        code = ord(char) & 0xFFFFFFFF
+        hashed = (code * 2654435761) & 0xFFFFFFFF
+        index = hashed % dim
+        sign = 1.0 if ((hashed >> 8) & 1) == 0 else -1.0
+        weight = 1.0 + ((hashed >> 16) % 7) / 10.0
+        vector[index] += sign * weight
+
+    norm = math.sqrt(sum(value * value for value in vector))
+    if norm == 0:
+        vector[0] = 1.0
+        return vector
+    return [value / norm for value in vector]
 
 
 def _openai_compatible_embed(chunks: list[DocumentChunk]) -> None:
@@ -66,18 +89,37 @@ def _openai_compatible_embed(chunks: list[DocumentChunk]) -> None:
 def _ollama_embed(chunks: list[DocumentChunk]) -> None:
     base_url = (config.embedding_base_url or "http://localhost:11434").rstrip("/")
     model = config.embedding_model or "nomic-embed-text"
+    batch_size = config.embedding_batch_size
 
     with httpx.Client(timeout=config.embedding_timeout_seconds) as client:
-        for chunk in chunks:
+        for batch in _batched(chunks, batch_size):
+            texts = [chunk.content for chunk in batch]
             resp = client.post(
                 f"{base_url}/api/embeddings",
-                json={"model": model, "prompt": chunk.content},
+                json={"model": model, "input": texts},
             )
             resp.raise_for_status()
-            embedding = resp.json().get("embedding")
-            if not embedding:
-                raise RuntimeError("Ollama embedding 未返回向量")
-            chunk.embedding = embedding
+            payload = resp.json()
+            embeddings = payload.get("embeddings") or []
+            if not embeddings:
+                # 回退：可能是旧版 Ollama，尝试逐个请求
+                for chunk in batch:
+                    single_resp = client.post(
+                        f"{base_url}/api/embeddings",
+                        json={"model": model, "prompt": chunk.content},
+                    )
+                    single_resp.raise_for_status()
+                    emb = single_resp.json().get("embedding")
+                    if not emb:
+                        raise RuntimeError("Ollama embedding 未返回向量")
+                    chunk.embedding = emb
+                continue
+            if len(embeddings) != len(batch):
+                raise RuntimeError(
+                    f"Ollama embedding 返回数量不匹配: expected={len(batch)}, got={len(embeddings)}"
+                )
+            for chunk, emb in zip(batch, embeddings):
+                chunk.embedding = emb
 
     log.info("Ollama embedding 完成: chunks=%d, model=%s", len(chunks), model)
 

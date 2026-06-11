@@ -51,26 +51,27 @@ function formatDate(d: string) {
 
 <style scoped>
 .kb-card {
-  background: var(--color-surface); border-radius: var(--radius-lg);
+  background: linear-gradient(180deg, rgba(11, 39, 84, .86), rgba(5, 22, 49, .72)); border-radius: 8px;
   border: 1px solid var(--color-border); padding: 20px;
   cursor: pointer; transition: box-shadow .2s, transform .2s;
   display: flex; flex-direction: column; gap: 12px;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.06);
 }
 .kb-card:hover { box-shadow: var(--shadow-md); transform: translateY(-2px); }
 .kb-card-header { display: flex; align-items: flex-start; justify-content: space-between; }
 .kb-icon {
   width: 40px; height: 40px; background: var(--color-accent-light);
   border-radius: 10px; display: flex; align-items: center; justify-content: center;
-  color: var(--color-accent); font-size: 18px;
+  color: #7db4ff; font-size: 18px;
 }
 .action-btn {
   background: none; border: none; cursor: pointer; padding: 4px 6px;
   border-radius: 4px; color: var(--color-text-muted);
   display: flex; align-items: center; transition: background .15s;
 }
-.action-btn:hover { background: var(--color-bg); }
+.action-btn:hover { background: rgba(47, 114, 255, .12); }
 .kb-body { flex: 1; }
-.kb-name { font-family: var(--font-heading); font-size: 16px; font-weight: 600; color: var(--color-text-primary); margin-bottom: 6px; }
+.kb-name { font-family: var(--font-heading); font-size: 16px; font-weight: 900; color: var(--color-text-primary); margin-bottom: 6px; }
 .kb-desc { font-size: 13px; color: var(--color-text-secondary); line-height: 1.5; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .kb-footer { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; padding-top: 12px; border-top: 1px solid var(--color-border); }
 .kb-meta { display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--color-text-muted); }

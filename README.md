@@ -100,6 +100,15 @@ docker compose up --build
 
 这会启动 PostgreSQL 16 + pgvector、Redis、MinIO、MinIO bucket 初始化、Spring Boot、Go RAG、Python Worker 和 Vue Preview。
 
+如果本机已经有 `knowflow-postgres` / `knowflow-redis` / `knowflow-minio` 等旧容器在运行，可以使用隔离 smoke 环境，避免端口和容器名冲突：
+
+```bash
+docker compose -p knowflow-smoke -f docker-compose.yml -f docker-compose.smoke.yml up --build -d
+BACKEND_URL=http://localhost:18081 RAG_URL=http://localhost:18090 ./scripts/smoke-e2e.sh
+```
+
+隔离 smoke 覆盖文件使用 Compose `!override` 语法，需要 Docker Compose v2.23 或更高版本。
+
 ### 2. 或手动启动基础设施
 
 ```bash
@@ -238,11 +247,47 @@ python3 -m app.main --check
 
 脚本会自动注册临时用户、创建知识库、上传测试文档、等待 Worker 解析完成，然后调用 `/api/chat/ask/stream` 验证 SSE token/sources/done 事件，并拒绝 mock sources。
 
+隔离 smoke 环境默认使用 `18081`（Backend）、`18090`（Go RAG）、`15173`（Frontend），不会占用常规开发端口。
+
 Demo 数据：
 
 ```bash
 ./scripts/seed-demo-data.sh
 ```
+
+---
+
+## Agent 模式
+
+Chat 页面支持普通 RAG 与 Agent 两种模式：
+
+- 普通 RAG：调用 `/api/chat/ask/stream`，返回流式 answer 与 sources。
+- Agent 模式：调用 `/api/agent/ask/stream`，返回 answer、sources、intent、confidence、trace 和 latencyMs。
+- Citation Guard 会在 sources 为空时直接返回“知识库中未找到足够依据，无法回答该问题。”，不会调用 LLM 编造答案。
+- sources 较少或最高 score 较低时会降低 confidence，并在弱依据回答前提示“当前知识库依据较弱，仅供参考。”
+
+---
+
+## Demo 流程
+
+1. 注册并登录 KnowFlow。
+2. 创建知识库，例如“项目资料库”。
+3. 上传 TXT / MD / PDF / DOCX 文档。
+4. 在文档管理页观察状态从 `UPLOADED → PARSING → EMBEDDING → DONE`。
+5. 进入 Chat，先用普通 RAG 提问并查看 sources。
+6. 切换 Agent 模式，再提问“帮我总结这份文档”或“给我一个学习计划”，查看 intent、confidence 和 trace。
+7. 打开 Dashboard，确认知识库、文档、chunk、问答次数、最近文档、最近会话和失败任务均来自后端统计接口。
+
+---
+
+## CI
+
+已新增 GitHub Actions 工作流 [`.github/workflows/ci.yml`](.github/workflows/ci.yml)，在 push 到 `main` 或 PR 时运行：
+
+- Backend: `mvn test`
+- Frontend: `npm ci && npm run build`
+- Go RAG: `go test ./...`
+- Python Worker: `python -m compileall app` 和 `python -m app.main --check`
 
 ---
 
@@ -281,6 +326,19 @@ Demo 数据：
 - [`knowflow-frontend/.env.example`](knowflow-frontend/.env.example) — 前端
 - [`knowflow-worker-python/.env.example`](knowflow-worker-python/.env.example) — Worker
 - [`knowflow-rag-go/.env.example`](knowflow-rag-go/.env.example) — Go RAG
+
+DeepSeek 接入时只在服务端配置 `RAG_LLM_API_KEY`，不要写入前端变量、源码、README 或提交记录。推荐配置：
+
+```env
+RAG_LLM_PROVIDER=deepseek
+RAG_LLM_API_KEY=sk-...
+RAG_LLM_BASE_URL=https://api.deepseek.com
+RAG_LLM_MODEL=deepseek-v4-flash
+RAG_LLM_THINKING_ENABLED=false
+RAG_EMBEDDING_PROVIDER=mock
+```
+
+`RAG_EMBEDDING_PROVIDER` 不会继承 DeepSeek Key；如需真实向量检索，请单独配置 `openai` 或 `ollama` embedding，并确保 Worker 与 Go RAG 的 embedding 维度一致。
 
 ---
 

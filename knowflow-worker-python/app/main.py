@@ -20,10 +20,8 @@ import os
 import sys
 import tempfile
 import time
-import traceback
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
-
 # 确保 app 包可导入
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -37,6 +35,54 @@ logging.basicConfig(
 log = logging.getLogger("worker")
 
 
+def _call_with_retry(fn, max_attempts: int = 3, step_name: str = ""):
+    """对瞬态故障指数退避重试。"""
+    base_delay = 2.0
+    for attempt in range(1, max_attempts + 1):
+        try:
+            return fn()
+        except Exception as e:
+            if attempt >= max_attempts:
+                raise
+            if not _is_transient_error(e):
+                raise
+            delay = base_delay * (2 ** (attempt - 1))
+            log.warning("%s 瞬态故障，%d 秒后重试 (attempt=%d/%d): %s",
+                        step_name, delay, attempt, max_attempts, e)
+            time.sleep(delay)
+
+
+def _is_transient_error(exc: Exception) -> bool:
+    """判断异常是否为瞬态故障。"""
+    try:
+        import httpx
+        if isinstance(exc, httpx.HTTPStatusError):
+            return exc.response.status_code in {429, 500, 502, 503, 504}
+        if isinstance(exc, (httpx.ConnectError, httpx.TimeoutException, httpx.RemoteProtocolError)):
+            return True
+    except ImportError:
+        pass
+    msg = str(exc).lower()
+    return any(kw in msg for kw in ("connection reset", "connection refused", "timeout", "temporarily unavailable"))
+
+
+def _with_connection(operation):
+    """短时借用数据库连接，避免在下载/解析/embedding 期间占用连接池。"""
+    from app.repository import get_connection, put_connection
+
+    conn = get_connection()
+    try:
+        return operation(conn)
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            log.warning("数据库连接回滚失败", exc_info=True)
+        raise
+    finally:
+        put_connection(conn)
+
+
 def process_task(task_id: int):
     """处理单个解析任务。"""
     from app.embedding import generate_embeddings
@@ -45,7 +91,6 @@ def process_task(task_id: int):
         claim_task,
         fetch_document,
         fetch_task,
-        get_connection,
         insert_chunks,
         update_document_status,
         update_task_status,
@@ -53,29 +98,34 @@ def process_task(task_id: int):
     from app.splitter import split_text
     from app.types import DocStatus, TaskStatus
 
-    conn = get_connection()
+    task = None
+    doc = None
     try:
         # 1. 原子认领任务，避免重复消费和覆盖已完成状态
-        task = claim_task(conn, task_id, config.task_claim_stale_minutes)
+        def claim_and_prepare(conn):
+            claimed_task = claim_task(conn, task_id, config.task_claim_stale_minutes)
+            if claimed_task is None:
+                current = fetch_task(conn, task_id)
+                if current is None:
+                    log.warning("任务不存在: taskId=%d", task_id)
+                else:
+                    log.info("任务当前不可处理，跳过: taskId=%d, status=%s", task_id, current.status)
+                return None, None
+
+            loaded_doc = fetch_document(conn, claimed_task.document_id)
+            if loaded_doc is None:
+                raise RuntimeError(f"文档不存在: docId={claimed_task.document_id}")
+
+            update_task_status(conn, claimed_task.id, TaskStatus.PARSING)
+            update_document_status(conn, loaded_doc.id, DocStatus.PARSING)
+            return claimed_task, loaded_doc
+
+        task, doc = _with_connection(claim_and_prepare)
         if task is None:
-            current = fetch_task(conn, task_id)
-            if current is None:
-                log.warning("任务不存在: taskId=%d", task_id)
-            else:
-                log.info("任务当前不可处理，跳过: taskId=%d, status=%s", task_id, current.status)
             return
 
         log.info("开始处理任务: taskId=%d, docId=%d, kbId=%d",
                  task.id, task.document_id, task.kb_id)
-
-        # 2. 查询文档
-        doc = fetch_document(conn, task.document_id)
-        if doc is None:
-            raise RuntimeError(f"文档不存在: docId={task.document_id}")
-
-        # 3. 更新文档状态 → PARSING
-        update_task_status(conn, task.id, TaskStatus.PARSING)
-        update_document_status(conn, doc.id, DocStatus.PARSING)
 
         # 4. 下载原始文件到临时目录
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -90,41 +140,48 @@ def process_task(task_id: int):
 
         if not chunks:
             log.warning("文档无有效内容: docId=%d", doc.id)
-            update_document_status(conn, doc.id, DocStatus.DONE, 0)
-            update_task_status(conn, task.id, TaskStatus.DONE)
+            _with_connection(lambda conn: (
+                update_document_status(conn, doc.id, DocStatus.DONE, 0),
+                update_task_status(conn, task.id, TaskStatus.DONE),
+            ))
             return
 
         # 7. 更新文档状态 → EMBEDDING
-        update_task_status(conn, task.id, TaskStatus.EMBEDDING)
-        update_document_status(conn, doc.id, DocStatus.EMBEDDING)
+        _with_connection(lambda conn: (
+            update_task_status(conn, task.id, TaskStatus.EMBEDDING),
+            update_document_status(conn, doc.id, DocStatus.EMBEDDING),
+        ))
 
-        # 8. 生成 embedding
-        generate_embeddings(chunks)
+        # 8. 生成 embedding（瞬态故障自动重试）
+        _call_with_retry(lambda: generate_embeddings(chunks), max_attempts=3, step_name="embedding")
 
-        # 9. 写入 document_chunk
-        insert_chunks(conn, chunks)
+        # 9. 写入 document_chunk 并更新状态 → DONE
+        def persist_done(conn):
+            insert_chunks(conn, chunks)
+            update_document_status(conn, doc.id, DocStatus.DONE, len(chunks))
+            update_task_status(conn, task.id, TaskStatus.DONE)
 
-        # 10. 更新状态 → DONE
-        update_document_status(conn, doc.id, DocStatus.DONE, len(chunks))
-        update_task_status(conn, task.id, TaskStatus.DONE)
+        _with_connection(persist_done)
 
         log.info("任务处理完成: taskId=%d, docId=%d, chunks=%d",
                  task.id, doc.id, len(chunks))
 
     except Exception as e:
-        log.error("任务处理失败: taskId=%d, error=%s", task_id, e)
-        traceback.print_exc()
+        log.exception("任务处理失败: taskId=%d, error=%s", task_id, e)
         try:
             error_message = str(e)
-            update_task_status(conn, task_id, TaskStatus.FAILED, error_message)
-            # 同时更新文档状态
-            task = fetch_task(conn, task_id)
-            if task:
-                update_document_status(conn, task.document_id, DocStatus.FAILED, error_message=error_message)
+            def mark_failed(conn):
+                update_task_status(conn, task_id, TaskStatus.FAILED, error_message)
+                failed_doc_id = doc.id if doc is not None else None
+                if failed_doc_id is None:
+                    current = task or fetch_task(conn, task_id)
+                    failed_doc_id = current.document_id if current else None
+                if failed_doc_id is not None:
+                    update_document_status(conn, failed_doc_id, DocStatus.FAILED, error_message=error_message)
+
+            _with_connection(mark_failed)
         except Exception:
             log.error("更新失败状态时出错", exc_info=True)
-    finally:
-        conn.close()
 
 
 def _download_file(file_path: str, local_path: str):
@@ -144,13 +201,13 @@ def _download_file(file_path: str, local_path: str):
         download_from_local(config.storage_local_path, file_path, local_path)
 
 
-def recover_tasks_on_start(redis_client):
-    """启动时恢复未投递或卡住的解析任务。"""
+def recover_tasks(redis_client, reason: str = "startup"):
+    """恢复未投递或卡住的解析任务。"""
     if not config.task_recovery_on_start:
         return
 
     from app.queue import push_task
-    from app.repository import get_connection, list_recoverable_tasks
+    from app.repository import get_connection, put_connection, list_recoverable_tasks
 
     conn = get_connection()
     try:
@@ -160,15 +217,20 @@ def recover_tasks_on_start(redis_client):
             config.task_recovery_limit,
         )
     finally:
-        conn.close()
+        put_connection(conn)
 
     for task_id in task_ids:
         push_task(redis_client, task_id)
 
     if task_ids:
-        log.info("启动恢复任务已重新入队: count=%d, ids=%s", len(task_ids), task_ids[:20])
+        log.info("任务恢复已重新入队: reason=%s, count=%d, ids=%s", reason, len(task_ids), task_ids[:20])
     else:
-        log.info("启动恢复检查完成，无需恢复的任务")
+        log.info("任务恢复检查完成: reason=%s, 无需恢复的任务", reason)
+
+
+def recover_tasks_on_start(redis_client):
+    """启动时恢复未投递或卡住的解析任务。"""
+    recover_tasks(redis_client, "startup")
 
 
 def run_checks():
@@ -223,13 +285,22 @@ def main():
              config.storage_type, config.embedding_provider, config.concurrency)
 
     from app.queue import block_pop_task, create_redis_client
+    from app.repository import init_pool, close_pool, init_pgvector_check
 
+    init_pool(minconn=1, maxconn=max(4, config.concurrency + 1))
+    init_pgvector_check()
     redis_client = create_redis_client()
     recover_tasks_on_start(redis_client)
+    last_recovery_at = time.monotonic()
 
     with ThreadPoolExecutor(max_workers=config.concurrency) as executor:
         while True:
             try:
+                now = time.monotonic()
+                if config.task_recovery_interval_seconds > 0 and now - last_recovery_at >= config.task_recovery_interval_seconds:
+                    recover_tasks(redis_client, "periodic")
+                    last_recovery_at = now
+
                 task_id = block_pop_task(redis_client, timeout=5)
                 if task_id is None:
                     continue
@@ -237,11 +308,14 @@ def main():
             except KeyboardInterrupt:
                 log.info("Worker 收到停止信号，退出")
                 break
+            except GeneratorExit:
+                break
             except Exception as e:
                 log.error("Worker 主循环异常: %s", e, exc_info=True)
                 time.sleep(5)
 
     redis_client.close()
+    close_pool()
 
 
 if __name__ == "__main__":

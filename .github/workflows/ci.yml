@@ -1,0 +1,107 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  backend:
+    name: Backend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+      - name: Run backend tests
+        working-directory: knowflow-backend
+        run: mvn test
+
+  frontend:
+    name: Frontend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: knowflow-frontend/package-lock.json
+      - name: Install dependencies
+        working-directory: knowflow-frontend
+        run: npm ci
+      - name: Run frontend unit tests
+        working-directory: knowflow-frontend
+        run: npm run test:unit
+      - name: Build frontend
+        working-directory: knowflow-frontend
+        run: npm run build
+
+  rag-go:
+    name: Go RAG
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+          cache-dependency-path: knowflow-rag-go/go.sum
+      - name: Run Go tests
+        working-directory: knowflow-rag-go
+        run: go test ./...
+
+  worker-python:
+    name: Python Worker
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: knowflow
+          POSTGRES_USER: knowflow
+          POSTGRES_PASSWORD: knowflow123
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U knowflow -d knowflow"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: knowflow-worker-python/requirements.txt
+      - name: Install dependencies
+        working-directory: knowflow-worker-python
+        run: pip install -r requirements.txt
+      - name: Compile worker
+        working-directory: knowflow-worker-python
+        run: python -m compileall app
+      - name: Check worker configuration
+        working-directory: knowflow-worker-python
+        env:
+          WORKER_REDIS_URL: redis://localhost:6379/0
+          WORKER_DB_HOST: localhost
+          WORKER_DB_PORT: '5432'
+          WORKER_DB_NAME: knowflow
+          WORKER_DB_USER: knowflow
+          WORKER_DB_PASSWORD: knowflow123
+          WORKER_STORAGE_TYPE: local
+          WORKER_STORAGE_LOCAL_PATH: /tmp/knowflow-worker-storage
+          WORKER_EMBEDDING_PROVIDER: mock
+        run: python -m app.main --check

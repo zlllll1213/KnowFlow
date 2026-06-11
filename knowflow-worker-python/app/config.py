@@ -7,6 +7,13 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
+# 加载 .env 文件（如果存在）
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
 
 @dataclass
 class Config:
@@ -57,6 +64,7 @@ class Config:
     task_claim_stale_minutes: int = int(os.getenv("WORKER_TASK_CLAIM_STALE_MINUTES", "30"))
     task_recovery_on_start: bool = os.getenv("WORKER_TASK_RECOVERY_ON_START", "true").lower() == "true"
     task_recovery_limit: int = int(os.getenv("WORKER_TASK_RECOVERY_LIMIT", "500"))
+    task_recovery_interval_seconds: int = int(os.getenv("WORKER_TASK_RECOVERY_INTERVAL_SECONDS", "60"))
 
     # 日志
     log_level: str = os.getenv("WORKER_LOG_LEVEL", "INFO")
@@ -79,9 +87,9 @@ class Config:
             if not self.minio_bucket:
                 errors.append("WORKER_MINIO_BUCKET 不能为空")
 
-        if self.embedding_provider not in {"mock", "openai", "deepseek", "ollama"}:
-            errors.append("WORKER_EMBEDDING_PROVIDER 仅支持 mock/openai/deepseek/ollama")
-        if self.embedding_provider in {"openai", "deepseek"} and not self.embedding_api_key:
+        if self.embedding_provider not in {"mock", "openai", "ollama"}:
+            errors.append("WORKER_EMBEDDING_PROVIDER 仅支持 mock/openai/ollama，暂不支持 deepseek embedding")
+        if self.embedding_provider == "openai" and not self.embedding_api_key:
             errors.append("WORKER_EMBEDDING_API_KEY 不能为空")
         if self.embedding_dim <= 0:
             errors.append("WORKER_EMBEDDING_DIM 必须大于 0")
@@ -104,6 +112,8 @@ class Config:
             errors.append("WORKER_TASK_CLAIM_STALE_MINUTES 必须大于 0")
         if self.task_recovery_limit <= 0:
             errors.append("WORKER_TASK_RECOVERY_LIMIT 必须大于 0")
+        if self.task_recovery_interval_seconds < 0:
+            errors.append("WORKER_TASK_RECOVERY_INTERVAL_SECONDS 不能小于 0")
 
         return errors
 

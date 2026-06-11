@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 
 import psycopg2
 import psycopg2.extras
+from psycopg2 import pool
 
 from app.config import config
 from app.types import ParseTask, Document, DocumentChunk, TaskStatus, DocStatus
@@ -22,10 +23,40 @@ try:
 except ImportError:
     VECTOR_AVAILABLE = False
 
+# 线程安全连接池（启动时初始化）
+_connection_pool: "pool.ThreadedConnectionPool | None" = None
+
+
+def init_pool(minconn: int = 1, maxconn: int = 4):
+    """初始化数据库连接池（线程安全）。"""
+    global _connection_pool
+    if _connection_pool is not None:
+        return
+    _connection_pool = pool.ThreadedConnectionPool(minconn, maxconn, config.db_dsn)
+    log.info("DB 连接池已初始化: min=%d, max=%d", minconn, maxconn)
+
 
 def get_connection():
-    """获取数据库连接。"""
+    """从连接池获取数据库连接。如果连接池不可用则回退到新建连接。"""
+    if _connection_pool is not None:
+        return _connection_pool.getconn()
     return psycopg2.connect(config.db_dsn)
+
+
+def put_connection(conn):
+    """归还连接池或关闭连接。"""
+    if _connection_pool is not None:
+        _connection_pool.putconn(conn)
+    else:
+        conn.close()
+
+
+def close_pool():
+    """关闭连接池。"""
+    global _connection_pool
+    if _connection_pool is not None:
+        _connection_pool.closeall()
+        _connection_pool = None
 
 
 def fetch_task(conn, task_id: int) -> ParseTask | None:
@@ -147,55 +178,69 @@ def update_document_status(conn, doc_id: int, status: str, chunk_count: int | No
 
 
 def insert_chunks(conn, chunks: list[DocumentChunk]):
-    """批量插入 document_chunk。"""
+    """批量插入 document_chunk（使用 executemany 提升性能）。"""
     if not chunks:
         return
 
     with conn.cursor() as cur:
         cur.execute("DELETE FROM document_chunk WHERE document_id = %s", (chunks[0].document_id,))
-        if VECTOR_AVAILABLE and chunks[0].embedding and _is_pgvector_embedding_column(conn):
-            # 使用 pgvector 的 VECTOR 类型
+        if VECTOR_AVAILABLE and chunks[0].embedding and _is_pgvector_embedding_column():
             register_vector(conn)
-            for chunk in chunks:
-                cur.execute(
-                    "INSERT INTO document_chunk (document_id, kb_id, chunk_index, content, embedding) "
-                    "VALUES (%s, %s, %s, %s, %s)",
-                    (
-                        chunk.document_id,
-                        chunk.kb_id,
-                        chunk.chunk_index,
-                        chunk.content,
-                        chunk.embedding,
-                    ),
-                )
+            data = [
+                (c.document_id, c.kb_id, c.chunk_index, c.content, c.embedding)
+                for c in chunks
+            ]
+            cur.executemany(
+                "INSERT INTO document_chunk (document_id, kb_id, chunk_index, content, embedding) "
+                "VALUES (%s, %s, %s, %s, %s)",
+                data,
+            )
         else:
-            # fallback: embedding 以 JSON 字符串存储
-            for chunk in chunks:
-                embedding_json = json.dumps(chunk.embedding) if chunk.embedding else "[]"
-                cur.execute(
-                    "INSERT INTO document_chunk (document_id, kb_id, chunk_index, content, embedding) "
-                    "VALUES (%s, %s, %s, %s, %s)",
-                    (
-                        chunk.document_id,
-                        chunk.kb_id,
-                        chunk.chunk_index,
-                        chunk.content,
-                        embedding_json,
-                    ),
+            data = [
+                (
+                    c.document_id,
+                    c.kb_id,
+                    c.chunk_index,
+                    c.content,
+                    json.dumps(c.embedding) if c.embedding else "[]",
                 )
+                for c in chunks
+            ]
+            cur.executemany(
+                "INSERT INTO document_chunk (document_id, kb_id, chunk_index, content, embedding) "
+                "VALUES (%s, %s, %s, %s, %s)",
+                data,
+            )
     conn.commit()
     log.info("已写入 %d 个 chunk 到数据库", len(chunks))
 
 
-def _is_pgvector_embedding_column(conn) -> bool:
-    """兼容旧库：只有 embedding 列真实为 vector 类型时才使用 pgvector adapter。"""
-    with conn.cursor() as cur:
-        cur.execute(
-            "SELECT udt_name FROM information_schema.columns "
-            "WHERE table_name = 'document_chunk' AND column_name = 'embedding'"
-        )
-        row = cur.fetchone()
-    return bool(row and row[0] == "vector")
+# 缓存 pgvector 列类型检测结果（启动时初始化一次）
+_pgvector_column_cached: bool | None = None
+
+
+def init_pgvector_check():
+    """启动时检查 document_chunk.embedding 列是否为 vector 类型。"""
+    global _pgvector_column_cached
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT udt_name FROM information_schema.columns "
+                "WHERE table_name = 'document_chunk' AND column_name = 'embedding'"
+            )
+            row = cur.fetchone()
+        _pgvector_column_cached = bool(row and row[0] == "vector")
+        log.info("pgvector 列检查: vector=%s", _pgvector_column_cached)
+    finally:
+        put_connection(conn)
+
+
+def _is_pgvector_embedding_column(_conn=None) -> bool:
+    """返回缓存的 pgvector 列类型检测结果。"""
+    if _pgvector_column_cached is None:
+        return False
+    return _pgvector_column_cached
 
 
 def check_database() -> None:
@@ -205,4 +250,4 @@ def check_database() -> None:
             cur.execute("SELECT 1")
             cur.fetchone()
     finally:
-        conn.close()
+        put_connection(conn)

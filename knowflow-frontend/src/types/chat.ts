@@ -48,5 +48,15 @@ export interface AgentResponse {
   latencyMs?: number
 }
 
+export type ChatStreamDone = ChatMessageVO | AgentResponse
+
+export function isAgentResponse(message: ChatStreamDone): message is AgentResponse {
+  const candidate = message as AgentResponse
+  return typeof candidate.answer === 'string'
+    && Array.isArray(candidate.sources)
+    && typeof candidate.confidence === 'number'
+    && Array.isArray(candidate.trace)
+}
+
 /** @deprecated 使用 RagSourceChunk */
 export type SourceChunk = RagSourceChunk

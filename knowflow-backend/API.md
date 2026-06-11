@@ -291,6 +291,7 @@ POST /api/chat/ask
 | id | long | 消息 ID |
 | role | string | "assistant" |
 | content | string | 回答内容 |
+| sources | array | 引用来源片段列表 |
 | createdAt | string | 创建时间 |
 
 ---
@@ -333,9 +334,103 @@ GET /api/chat/history?sessionId={sessionId}
 | id | long | 消息 ID |
 | role | string | "user" 或 "assistant" |
 | content | string | 消息内容 |
+| sources | array | assistant 消息的引用来源片段列表 |
 | createdAt | string | 创建时间 |
 
-## 5. 系统健康检查
+**sources 元素结构 `RagSourceChunk`:**
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| chunkId | long | chunk ID |
+| documentId | long | 文档 ID |
+| fileName | string | 文件名 |
+| chunkIndex | number | chunk 序号 |
+| content | string | 引用片段内容 |
+| score | number | 相关性分数，0-1 附近 |
+
+## 5. Agent 问答
+
+### 5.1 Agent 提问
+
+```
+POST /api/agent/ask
+```
+
+**Request Body:** 同聊天提问 4.3。
+
+**Response `data`:**
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| intent | string | 识别意图：qa / summarize / study_plan / code_analysis / unknown |
+| answer | string | 回答内容 |
+| sources | array | 引用来源列表 |
+| confidence | number | 置信度 0-1 |
+| trace | array | Agent trace 步骤 |
+| latencyMs | number | 总延迟（毫秒） |
+
+**trace 元素结构 `AgentTraceStep`:**
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| step | string | router / retriever / answer / citation_guard |
+| detail | string | 当前 Agent 步骤说明 |
+
+### 5.2 Agent 流式提问
+
+```
+POST /api/agent/ask/stream
+```
+
+**Request Body:** 同 4.3。
+
+**SSE 事件:**
+
+| 事件 | data | 说明 |
+|------|------|------|
+| meta | `{ "intent": "...", "confidence": 0.85, "trace": [...], "latencyMs": 1240 }` | Agent 元信息 |
+| token | `{ "type": "token", "content": "..." }` | 增量回答文本 |
+| sources | `{ "type": "sources", "sources": [...] }` | 引用来源 |
+| done | `AgentResponse` | 完整响应 |
+| error | `{ "type": "error", "message": "..." }` | 错误 |
+
+---
+
+## 6. Dashboard
+
+### 6.1 工作台统计
+
+```
+GET /api/dashboard/stats
+```
+
+**Response `data`:**
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| kbCount | number | 知识库数量 |
+| docCount | number | 文档总数 |
+| doneDocCount | number | 已完成解析的文档数 |
+| failedDocCount | number | 解析失败的文档数 |
+| chunkCount | number | 切片总数 |
+| chatCount | number | 用户提问总数 |
+| recentDocs | array | 最近 5 个文档，按 createdAt 倒序 |
+| recentSessions | array | 最近 5 个会话，按 updatedAt 倒序 |
+| recentFailedTasks | array | 最近 5 个失败任务 |
+
+**recentFailedTasks 元素结构：**
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| taskId | long | 解析任务 ID |
+| documentId | long | 文档 ID |
+| fileName | string | 文件名 |
+| errorMessage | string | 失败原因 |
+| updatedAt | string | 任务更新时间 |
+
+---
+
+## 7. 系统健康检查
 
 ### 5.1 后端依赖健康检查
 

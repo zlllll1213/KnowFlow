@@ -81,7 +81,7 @@ import { ElMessage } from 'element-plus/es/components/message/index.mjs'
 import { ElMessageBox } from 'element-plus/es/components/message-box/index.mjs'
 import DocumentUpload from '@/components/DocumentUpload.vue'
 import { getKbDetail } from '@/api/kb'
-import { getDocumentList, uploadDocument, deleteDocument } from '@/api/document'
+import { getDocumentDetail, getDocumentList, getDocumentStatus, uploadDocument, deleteDocument } from '@/api/document'
 import type { KbVO } from '@/types/kb'
 import type { DocumentVO } from '@/types/document'
 
@@ -99,6 +99,10 @@ const uploadVisible = ref(false)
 const uploading = ref(false)
 const uploadProgress = ref(0)
 const currentFile = ref('')
+const STATUS_POLL_INTERVAL_MS = 2000
+const MAX_STATUS_POLLS = 180
+const activeStatuses = ['UPLOADED', 'PARSING', 'EMBEDDING']
+const terminalStatuses = ['DONE', 'FAILED']
 
 const statusLabel: Record<string, string> = {
   UPLOADED: '已上传', PARSING: '解析中', EMBEDDING: '向量化', DONE: '已完成', FAILED: '失败',
@@ -108,7 +112,7 @@ const statusIcon: Record<string, string> = {
 }
 
 function isProcessing(status: string) {
-  return status === 'PARSING' || status === 'EMBEDDING'
+  return activeStatuses.includes(status)
 }
 
 async function loadData() {
@@ -119,7 +123,9 @@ async function loadData() {
     docs.value = docPage.records
     total.value = docPage.total
     syncPolling()
-  } catch {} finally { loading.value = false }
+  } catch (e: unknown) {
+    console.error('加载知识库详情失败', e)
+  } finally { loading.value = false }
 }
 
 async function loadDocs() {
@@ -129,11 +135,14 @@ async function loadDocs() {
     docs.value = result.records
     total.value = result.total
     syncPolling()
-  } catch {} finally { loading.value = false }
+  } catch (e: unknown) {
+    console.error('加载文档列表失败', e)
+  } finally { loading.value = false }
 }
 
 onMounted(loadData)
-let pollTimer: number | undefined
+const pollTimers = new Map<number, number>()
+const pollAttempts = new Map<number, number>()
 onBeforeUnmount(() => {
   stopPolling()
 })
@@ -144,9 +153,11 @@ async function handleUpload(files: File[]) {
   for (let i = 0; i < files.length; i++) {
     currentFile.value = files[i].name
     try {
-      await uploadDocument(kbId, files[i], (percent) => {
+      const uploadedDoc = await uploadDocument(kbId, files[i], (percent) => {
         uploadProgress.value = Math.min(99, Math.round(((i + percent / 100) / files.length) * 100))
       })
+      upsertDocument(uploadedDoc)
+      startDocumentPolling(uploadedDoc.id)
       uploadProgress.value = Math.round((i + 1) / files.length * 100)
     } catch (e: any) { ElMessage.error(`${files[i].name} 上传失败: ${e.message}`) }
   }
@@ -156,25 +167,70 @@ async function handleUpload(files: File[]) {
   await loadDocs()
 }
 
-function hasProcessingDocs() {
-  return docs.value.some(d => ['UPLOADED', 'PARSING', 'EMBEDDING'].includes(d.status))
+function syncPolling() {
+  const visibleIds = new Set(docs.value.map(d => d.id))
+  for (const doc of docs.value) {
+    if (activeStatuses.includes(doc.status)) {
+      startDocumentPolling(doc.id)
+    }
+    if (terminalStatuses.includes(doc.status)) {
+      stopDocumentPolling(doc.id)
+    }
+  }
+  for (const docId of pollTimers.keys()) {
+    if (!visibleIds.has(docId)) stopDocumentPolling(docId)
+  }
 }
 
-function syncPolling() {
-  if (!hasProcessingDocs()) {
-    stopPolling()
+function startDocumentPolling(docId: number) {
+  if (pollTimers.has(docId)) return
+  pollAttempts.set(docId, 0)
+  const timer = window.setInterval(() => {
+    pollDocumentStatus(docId)
+  }, STATUS_POLL_INTERVAL_MS)
+  pollTimers.set(docId, timer)
+  pollDocumentStatus(docId)
+}
+
+async function pollDocumentStatus(docId: number) {
+  const attempts = (pollAttempts.get(docId) ?? 0) + 1
+  pollAttempts.set(docId, attempts)
+  if (attempts > MAX_STATUS_POLLS) {
+    stopDocumentPolling(docId)
+    ElMessage.warning('文档解析仍未完成，请稍后手动刷新状态')
     return
   }
-  if (pollTimer) return
-  pollTimer = window.setInterval(async () => {
-    await loadDocs()
-  }, 3000)
+
+  try {
+    const status = await getDocumentStatus(docId)
+    patchDocument(docId, { status })
+    if (!terminalStatuses.includes(status)) return
+
+    stopDocumentPolling(docId)
+    const detail = await getDocumentDetail(docId)
+    upsertDocument(detail)
+    if (detail.status === 'FAILED' && detail.errorMessage) {
+      ElMessage.error(`${detail.fileName} 解析失败：${detail.errorMessage}`)
+    }
+  } catch (e: any) {
+    stopDocumentPolling(docId)
+    ElMessage.warning(e.message || '文档状态刷新失败')
+  }
+}
+
+function stopDocumentPolling(docId: number) {
+  const timer = pollTimers.get(docId)
+  if (timer) window.clearInterval(timer)
+  pollTimers.delete(docId)
+  pollAttempts.delete(docId)
 }
 
 function stopPolling() {
-  if (!pollTimer) return
-  window.clearInterval(pollTimer)
-  pollTimer = undefined
+  for (const timer of pollTimers.values()) {
+    window.clearInterval(timer)
+  }
+  pollTimers.clear()
+  pollAttempts.clear()
 }
 
 function handlePageChange(nextPage: number) {
@@ -185,10 +241,28 @@ function handlePageChange(nextPage: number) {
 async function handleDelete(doc: DocumentVO) {
   await ElMessageBox.confirm(`确定删除「${doc.fileName}」？`, '删除确认', { type: 'warning' })
   try {
+    stopDocumentPolling(doc.id)
     await deleteDocument(doc.id)
     ElMessage.success('已删除')
     loadDocs()
   } catch (e: any) { ElMessage.error(e.message) }
+}
+
+function upsertDocument(doc: DocumentVO) {
+  const idx = docs.value.findIndex(d => d.id === doc.id)
+  if (idx >= 0) {
+    docs.value[idx] = { ...docs.value[idx], ...doc }
+  } else {
+    docs.value.unshift(doc)
+    total.value += 1
+  }
+}
+
+function patchDocument(docId: number, patch: Partial<DocumentVO>) {
+  const idx = docs.value.findIndex(d => d.id === docId)
+  if (idx >= 0) {
+    docs.value[idx] = { ...docs.value[idx], ...patch }
+  }
 }
 
 function goChat() { router.push({ path: '/chat', query: { kbId } }) }

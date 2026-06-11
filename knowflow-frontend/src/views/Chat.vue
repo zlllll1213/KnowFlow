@@ -59,6 +59,36 @@
             <div class="thinking-dot" /><div class="thinking-dot" /><div class="thinking-dot" />
           </div>
         </div>
+        <div v-if="hasEvidence" class="mobile-evidence-panel">
+          <div class="mobile-evidence-tabs">
+            <button
+              type="button"
+              :class="{ active: evidenceTab === 'sources' }"
+              @click="evidenceTab = 'sources'"
+            >
+              引用来源
+              <span v-if="sources.length">{{ sources.length }}</span>
+            </button>
+            <button
+              v-if="hasTrace"
+              type="button"
+              :class="{ active: evidenceTab === 'trace' }"
+              @click="evidenceTab = 'trace'"
+            >
+              Agent Trace
+            </button>
+          </div>
+          <div class="mobile-evidence-body">
+            <SourcePanel v-if="evidenceTab === 'sources'" :sources="sources" />
+            <AgentTracePanel
+              v-else
+              :trace="agentTrace"
+              :confidence="agentConfidence"
+              :intent="agentIntent"
+              :latency-ms="agentLatencyMs"
+            />
+          </div>
+        </div>
         <div class="input-area">
           <el-input
             v-model="inputText"
@@ -69,11 +99,15 @@
             @keydown.ctrl.enter="sendMessage"
           />
           <el-button
+            v-if="!answering"
             type="primary" class="send-btn"
-            :loading="answering" :disabled="!inputText.trim()"
+            :disabled="!inputText.trim()"
             @click="sendMessage"
           >
             <el-icon><Promotion /></el-icon>
+          </el-button>
+          <el-button v-else type="danger" plain class="send-btn" @click="cancelActiveStream(true)">
+            <el-icon><Close /></el-icon>
           </el-button>
         </div>
       </template>
@@ -96,7 +130,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, nextTick, watch } from 'vue'
+import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus/es/components/message/index.mjs'
 import ChatMessage from '@/components/ChatMessage.vue'
@@ -105,6 +139,7 @@ import AgentTracePanel from '@/components/AgentTracePanel.vue'
 import { getKbList } from '@/api/kb'
 import { createSession, listSessions, askQuestionStream, askAgentStream, getChatHistory } from '@/api/chat'
 import type { KbVO } from '@/types/kb'
+import { isAgentResponse } from '@/types/chat'
 import type { AgentResponse, AgentTraceStep, ChatSessionVO, ChatMessageVO, RagSourceChunk } from '@/types/chat'
 
 const route = useRoute()
@@ -122,11 +157,19 @@ const agentConfidence = ref<number | null>(null)
 const agentIntent = ref<AgentResponse['intent'] | string | null>(null)
 const agentLatencyMs = ref<number | null>(null)
 const messagesRef = ref<HTMLElement>()
+const streamController = ref<AbortController | null>(null)
+const evidenceTab = ref<'sources' | 'trace'>('sources')
 
 const currentKbName = computed(() => kbs.value.find(k => k.id === selectedKbId.value)?.name ?? '')
+const hasTrace = computed(() => agentMode.value || agentTrace.value.length > 0)
+const hasEvidence = computed(() => sources.value.length > 0 || hasTrace.value)
+
+watch(agentMode, (enabled) => {
+  evidenceTab.value = enabled && !sources.value.length ? 'trace' : 'sources'
+})
 
 onMounted(async () => {
-  kbs.value = (await getKbList().catch(() => ({ records: [] }))).records
+  kbs.value = (await getKbList().catch((e: unknown) => { console.error('加载知识库列表失败', e); return { records: [], total: 0 } })).records
   const kbId = route.query.kbId ? Number(route.query.kbId) : null
   if (kbId && kbs.value.find(k => k.id === kbId)) {
     selectedKbId.value = kbId
@@ -134,7 +177,12 @@ onMounted(async () => {
   }
 })
 
+onBeforeUnmount(() => {
+  cancelActiveStream(false)
+})
+
 async function onKbChange() {
+  cancelActiveStream(false)
   sessions.value = []
   currentSession.value = null
   messages.value = []
@@ -144,13 +192,14 @@ async function onKbChange() {
 
 async function loadSessions() {
   if (!selectedKbId.value) return
-  sessions.value = (await listSessions(selectedKbId.value).catch(() => ({ records: [] }))).records
+  sessions.value = (await listSessions(selectedKbId.value).catch((e: unknown) => { console.error('加载会话列表失败', e); return { records: [], total: 0 } })).records
   if (sessions.value.length > 0) await selectSession(sessions.value[0])
 }
 
 async function selectSession(s: ChatSessionVO) {
+  cancelActiveStream(false)
   currentSession.value = s
-  messages.value = (await getChatHistory(s.id).catch(() => ({ records: [] }))).records
+  messages.value = (await getChatHistory(s.id).catch((e: unknown) => { console.error('加载聊天历史失败', e); return { records: [], total: 0 } })).records
   resetEvidence()
   scrollToBottom()
 }
@@ -165,6 +214,10 @@ async function createNewSession() {
 }
 
 async function sendMessage() {
+  if (answering.value) {
+    cancelActiveStream(true)
+    return
+  }
   if (!inputText.value.trim() || !currentSession.value || !selectedKbId.value) return
   const question = inputText.value.trim()
   inputText.value = ''
@@ -180,6 +233,7 @@ async function sendMessage() {
 
   answering.value = true
   resetEvidence()
+  if (agentMode.value) evidenceTab.value = 'trace'
   const assistantMsg: ChatMessageVO = {
     id: -Date.now(),
     role: 'assistant',
@@ -191,7 +245,10 @@ async function sendMessage() {
   messages.value.push(assistantMsg)
   scrollToBottom()
 
+  let controller: AbortController | null = null
   try {
+    controller = new AbortController()
+    streamController.value = controller
     const stream = agentMode.value ? askAgentStream : askQuestionStream
     const reply = await stream(
       {
@@ -207,6 +264,8 @@ async function sendMessage() {
         onSources: (items) => {
           sources.value = items ?? []
           assistantMsg.sources = sources.value
+          if (sources.value.length && !agentMode.value) evidenceTab.value = 'sources'
+          scrollToBottom()
         },
         onMeta: (meta) => {
           if (!agentMode.value) return
@@ -214,12 +273,14 @@ async function sendMessage() {
           agentConfidence.value = typeof meta.confidence === 'number' ? meta.confidence : agentConfidence.value
           agentTrace.value = meta.trace ?? agentTrace.value
           agentLatencyMs.value = typeof meta.latencyMs === 'number' ? meta.latencyMs : agentLatencyMs.value
+          if (agentTrace.value.length) evidenceTab.value = 'trace'
           assistantMsg.intent = agentIntent.value ?? undefined
           assistantMsg.confidence = agentConfidence.value ?? undefined
+          scrollToBottom()
         },
         onDone: (message) => {
           const idx = messages.value.findIndex(m => m.id === assistantMsg.id)
-          const normalized: ChatMessageVO = 'answer' in message
+          const normalized: ChatMessageVO = isAgentResponse(message)
             ? {
                 ...assistantMsg,
                 content: message.answer,
@@ -231,23 +292,46 @@ async function sendMessage() {
             : message
           if (idx >= 0) messages.value[idx] = normalized
           sources.value = normalized.sources ?? sources.value
-          if ('trace' in message) {
+          if (isAgentResponse(message)) {
             agentTrace.value = message.trace ?? agentTrace.value
             agentConfidence.value = message.confidence
             agentIntent.value = message.intent
             agentLatencyMs.value = message.latencyMs ?? agentLatencyMs.value
           }
+          scrollToBottom()
         },
-      }
+      },
+      { signal: controller.signal }
     )
-    if (!assistantMsg.content) assistantMsg.content = 'answer' in reply ? reply.answer : reply.content
+    if (!assistantMsg.content) assistantMsg.content = isAgentResponse(reply) ? reply.answer : reply.content
     scrollToBottom()
   } catch (e: any) {
+    if ((controller?.signal.aborted ?? false) || isAbortError(e)) {
+      const idx = messages.value.findIndex(m => m.id === assistantMsg.id)
+      if (idx >= 0 && assistantMsg.content.trim()) {
+        assistantMsg.content = `${assistantMsg.content}\n\n已停止生成。`
+      } else {
+        messages.value = messages.value.filter(m => m.id !== assistantMsg.id)
+      }
+      return
+    }
     messages.value = messages.value.filter(m => m.id !== assistantMsg.id)
     ElMessage.error(e.message || '问答失败')
   } finally {
     answering.value = false
+    if (streamController.value === controller) streamController.value = null
   }
+}
+
+function cancelActiveStream(showMessage = true) {
+  const controller = streamController.value
+  if (!controller || controller.signal.aborted) return
+  controller.abort()
+  if (showMessage) ElMessage.info('已停止生成')
+}
+
+function isAbortError(error: unknown) {
+  return typeof error === 'object' && error !== null && 'name' in error && error.name === 'AbortError'
 }
 
 async function scrollToBottom() {
@@ -255,6 +339,13 @@ async function scrollToBottom() {
   if (messagesRef.value) {
     messagesRef.value.scrollTop = messagesRef.value.scrollHeight
   }
+  if (isMobileChatViewport()) {
+    window.scrollTo({ top: document.documentElement.scrollHeight, behavior: 'auto' })
+  }
+}
+
+function isMobileChatViewport() {
+  return typeof window !== 'undefined' && window.matchMedia('(max-width: 768px)').matches
 }
 
 function formatDate(d: string) {
@@ -267,23 +358,34 @@ function resetEvidence() {
   agentConfidence.value = null
   agentIntent.value = null
   agentLatencyMs.value = null
+  evidenceTab.value = 'sources'
 }
 </script>
 
 <style scoped>
-.chat-layout { display: flex; height: calc(100vh - 0px); margin: -32px -36px; overflow: hidden; }
+.chat-layout {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  height: 100vh;
+  margin: -28px;
+  overflow: hidden;
+  background: rgba(2, 8, 23, .24);
+}
 
 .chat-sidebar {
-  width: 240px; flex-shrink: 0; background: var(--color-surface);
+  width: 260px; flex-shrink: 0;
+  background: rgba(3, 17, 41, .82);
   border-right: 1px solid var(--color-border); display: flex; flex-direction: column; overflow: hidden;
+  backdrop-filter: blur(18px);
 }
 .sidebar-section { padding: 16px 14px; border-bottom: 1px solid var(--color-border); }
-.section-label { font-size: 11px; font-weight: 600; color: var(--color-text-muted); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 8px; display: block; }
+.section-label { font-size: 11px; font-weight: 800; color: var(--color-text-muted); text-transform: uppercase; letter-spacing: .04em; margin-bottom: 8px; display: block; }
 .sessions-section { flex: 1; display: flex; flex-direction: column; overflow: hidden; border-bottom: none; }
 .sessions-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
 .new-session-btn {
-  width: 22px; height: 22px; border-radius: 4px; border: 1px solid var(--color-border);
-  background: none; cursor: pointer; color: var(--color-text-secondary);
+  width: 26px; height: 26px; border-radius: 8px; border: 1px solid var(--color-border);
+  background: rgba(47, 114, 255, .12); cursor: pointer; color: #8db7ff;
   display: flex; align-items: center; justify-content: center; font-size: 12px;
 }
 .new-session-btn:hover:not(:disabled) { background: var(--color-accent-light); color: var(--color-accent); border-color: var(--color-accent); }
@@ -292,17 +394,21 @@ function resetEvidence() {
 .no-kb-tip, .no-sessions { font-size: 12px; color: var(--color-text-muted); padding: 20px 0; text-align: center; }
 .session-item {
   display: flex; align-items: flex-start; gap: 9px; padding: 9px 10px;
-  border-radius: var(--radius-sm); cursor: pointer; transition: background .15s;
+  border-radius: 8px; cursor: pointer; transition: background .15s, box-shadow .15s;
 }
-.session-item:hover { background: var(--color-bg); }
-.session-item.active { background: var(--color-accent-light); }
+.session-item:hover { background: rgba(47, 114, 255, .1); }
+.session-item.active { background: rgba(47, 114, 255, .18); box-shadow: inset 3px 0 0 #31c7ff; }
 .session-icon { font-size: 14px; color: var(--color-text-muted); margin-top: 2px; flex-shrink: 0; }
 .session-item.active .session-icon { color: var(--color-accent); }
 .session-title { font-size: 13px; font-weight: 500; color: var(--color-text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .session-time { font-size: 11px; color: var(--color-text-muted); margin-top: 2px; }
 
 .chat-main {
-  flex: 1; display: flex; flex-direction: column; background: var(--color-bg); overflow: hidden;
+  flex: 1; display: flex; flex-direction: column;
+  background:
+    radial-gradient(circle at 50% 0, rgba(47, 114, 255, .12), transparent 30%),
+    rgba(2, 13, 32, .52);
+  overflow: hidden;
 }
 .chat-welcome {
   flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
@@ -311,8 +417,8 @@ function resetEvidence() {
 .welcome-icon { font-size: 52px; color: var(--color-border); }
 .chat-welcome h3 { font-family: var(--font-heading); font-size: 20px; color: var(--color-text-secondary); }
 .chat-welcome p { font-size: 14px; }
-.chat-header { padding: 16px 24px 12px; border-bottom: 1px solid var(--color-border); background: var(--color-surface); display: flex; align-items: center; justify-content: space-between; gap: 16px; }
-.chat-title { font-family: var(--font-heading); font-size: 16px; font-weight: 600; }
+.chat-header { padding: 16px 24px 12px; border-bottom: 1px solid var(--color-border); background: rgba(7, 28, 62, .72); display: flex; align-items: center; justify-content: space-between; gap: 16px; backdrop-filter: blur(18px); }
+.chat-title { font-family: var(--font-heading); font-size: 16px; font-weight: 900; color: #f6f9ff; }
 .chat-subtitle { font-size: 12px; color: var(--color-text-muted); margin-top: 2px; }
 .messages-wrap { flex: 1; overflow-y: auto; padding: 20px 24px; display: flex; flex-direction: column; gap: 16px; }
 .messages-empty { text-align: center; color: var(--color-text-muted); font-size: 14px; padding: 40px 0; }
@@ -326,22 +432,82 @@ function resetEvidence() {
 @keyframes bounce { 0%, 80%, 100% { transform: scale(.6); opacity:.4; } 40% { transform: scale(1); opacity:1; } }
 .input-area {
   padding: 16px 24px 20px; border-top: 1px solid var(--color-border);
-  background: var(--color-surface); display: flex; gap: 10px; align-items: flex-end;
+  background: rgba(7, 28, 62, .78); display: flex; gap: 10px; align-items: flex-end;
+  backdrop-filter: blur(18px);
 }
 .input-area .el-textarea { flex: 1; }
 .send-btn { height: 72px; width: 52px; font-size: 18px; }
 
 .source-column {
-  width: 260px; flex-shrink: 0; background: var(--color-surface);
+  width: 320px; flex-shrink: 0; background: rgba(3, 17, 41, .82);
   border-left: 1px solid var(--color-border); overflow: hidden;
+  backdrop-filter: blur(18px);
 }
 .source-stack {
   height: 100%; display: grid; grid-template-rows: minmax(0, 1fr) minmax(220px, 42%);
+}
+.mobile-evidence-panel {
+  display: none;
 }
 
 @media (max-width: 1024px) {
   .source-column {
     display: none;
+  }
+
+  .mobile-evidence-panel {
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+    max-height: 36svh;
+    margin: 0 24px 12px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    background: var(--color-surface);
+    overflow: hidden;
+  }
+
+  .mobile-evidence-tabs {
+    display: flex;
+    gap: 6px;
+    padding: 8px;
+    border-bottom: 1px solid var(--color-border);
+    background: var(--color-bg);
+  }
+
+  .mobile-evidence-tabs button {
+    min-width: 0;
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--color-text-secondary);
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 6px 10px;
+    transition: background .15s, border-color .15s, color .15s;
+  }
+
+  .mobile-evidence-tabs button:hover,
+  .mobile-evidence-tabs button.active {
+    border-color: var(--color-border);
+    background: var(--color-surface);
+    color: var(--color-accent);
+  }
+
+  .mobile-evidence-tabs span {
+    margin-left: 4px;
+    color: var(--color-text-muted);
+  }
+
+  .mobile-evidence-body {
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .mobile-evidence-body :deep(.source-panel),
+  .mobile-evidence-body :deep(.agent-trace-panel) {
+    height: min(32svh, 320px);
   }
 }
 
@@ -396,6 +562,16 @@ function resetEvidence() {
   .input-area {
     padding: 12px 16px calc(14px + env(safe-area-inset-bottom));
     gap: 8px;
+  }
+
+  .mobile-evidence-panel {
+    max-height: 34svh;
+    margin: 0 16px 10px;
+  }
+
+  .mobile-evidence-body :deep(.source-panel),
+  .mobile-evidence-body :deep(.agent-trace-panel) {
+    height: min(30svh, 260px);
   }
 
   .send-btn {

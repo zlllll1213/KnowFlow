@@ -29,13 +29,14 @@ type Message struct {
 func NewProvider(cfg *config.Config) Provider {
 	switch strings.ToLower(cfg.LLMProvider) {
 	case "", "mock":
-		return &MockProvider{}
+		return &MockProvider{label: "Mock"}
 	case "openai", "deepseek":
 		return &OpenAICompatibleProvider{
-			apiKey:  cfg.LLMAPIKey,
-			baseURL: defaultString(cfg.LLMBaseURL, providerDefaultBaseURL(cfg.LLMProvider)),
-			model:   defaultString(cfg.LLMModel, providerDefaultModel(cfg.LLMProvider)),
-			client:  &http.Client{Timeout: cfg.RequestTimeout},
+			apiKey:       cfg.LLMAPIKey,
+			baseURL:      defaultString(cfg.LLMBaseURL, providerDefaultBaseURL(cfg.LLMProvider)),
+			model:        defaultString(cfg.LLMModel, providerDefaultModel(cfg.LLMProvider)),
+			thinkingMode: providerThinkingMode(cfg.LLMProvider, cfg.LLMThinking),
+			client:       &http.Client{Timeout: cfg.RequestTimeout},
 		}
 	case "ollama":
 		return &OllamaProvider{
@@ -45,35 +46,26 @@ func NewProvider(cfg *config.Config) Provider {
 		}
 	default:
 		log.Printf("未知 LLM provider: %s, 回退到 mock", cfg.LLMProvider)
-		return &MockProvider{}
+		return &MockProvider{label: "Mock"}
 	}
 }
 
 type MockProvider struct {
-	label string
+	label string // set once at construction; safe for concurrent reads
 }
 
 func (m *MockProvider) Chat(ctx context.Context, messages []Message) (string, error) {
-	if m.label == "" {
-		m.label = "Mock"
-	}
 	question := lastUserMessage(messages)
-	return fmt.Sprintf("[%s 模式] 已收到您的问题：「%s」。\n根据知识库中的参考资料，我找到了一些相关内容。请查看右侧引用来源了解详情。\n\n提示：当前为 mock 回答模式。配置 RAG_LLM_PROVIDER 和 API key 后即可获得真实 AI 回答。", m.label, question), nil
+	return fmt.Sprintf("已收到您的问题：「%s」。\n根据知识库中的参考资料，我找到了一些相关内容。请查看右侧引用来源了解详情。", question), nil
 }
 
 func (m *MockProvider) ChatStream(ctx context.Context, messages []Message, out chan<- string) error {
-	if m.label == "" {
-		m.label = "Mock"
-	}
-
 	chunks := []string{
-		fmt.Sprintf("[%s 流式模式] ", m.label),
 		"正在分析您的问题……\n\n",
 		"根据知识库中的参考资料，",
 		"我为您整理了以下信息：\n\n",
 		"这是基于当前知识库内容的回答。\n",
-		"请查看右侧引用来源了解具体文档片段。\n\n",
-		"提示：当前为 mock 流式回答。配置真实 LLM 后可获得 AI 生成回答。",
+		"请查看右侧引用来源了解具体文档片段。",
 	}
 
 	for _, chunk := range chunks {
@@ -87,10 +79,11 @@ func (m *MockProvider) ChatStream(ctx context.Context, messages []Message, out c
 }
 
 type OpenAICompatibleProvider struct {
-	apiKey  string
-	baseURL string
-	model   string
-	client  *http.Client
+	apiKey       string
+	baseURL      string
+	model        string
+	thinkingMode string
+	client       *http.Client
 }
 
 func (p *OpenAICompatibleProvider) Chat(ctx context.Context, messages []Message) (string, error) {
@@ -176,11 +169,15 @@ func (p *OpenAICompatibleProvider) requestBody(messages []Message, stream bool) 
 	if p.apiKey == "" {
 		return nil, fmt.Errorf("LLM API key 未配置")
 	}
-	return json.Marshal(map[string]any{
+	payload := map[string]any{
 		"model":    p.model,
 		"messages": messages,
 		"stream":   stream,
-	})
+	}
+	if p.thinkingMode != "" {
+		payload["thinking"] = map[string]string{"type": p.thinkingMode}
+	}
+	return json.Marshal(payload)
 }
 
 func (p *OpenAICompatibleProvider) newRequest(ctx context.Context, body []byte) (*http.Request, error) {
@@ -299,16 +296,26 @@ func lastUserMessage(messages []Message) string {
 
 func providerDefaultBaseURL(provider string) string {
 	if strings.EqualFold(provider, "deepseek") {
-		return "https://api.deepseek.com/v1"
+		return "https://api.deepseek.com"
 	}
 	return "https://api.openai.com/v1"
 }
 
 func providerDefaultModel(provider string) string {
 	if strings.EqualFold(provider, "deepseek") {
-		return "deepseek-chat"
+		return "deepseek-v4-flash"
 	}
 	return "gpt-4o-mini"
+}
+
+func providerThinkingMode(provider string, thinkingEnabled bool) string {
+	if !strings.EqualFold(provider, "deepseek") {
+		return ""
+	}
+	if thinkingEnabled {
+		return "enabled"
+	}
+	return "disabled"
 }
 
 func defaultString(value, fallback string) string {
