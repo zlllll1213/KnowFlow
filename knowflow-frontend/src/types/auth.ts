@@ -12,7 +12,6 @@ export interface RegisterRequest {
 export interface LoginResponse {
   userId: number
   username: string
-  token: string
 }
 
 export interface UserVO {

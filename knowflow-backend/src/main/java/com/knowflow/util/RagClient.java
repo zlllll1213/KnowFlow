@@ -35,16 +35,19 @@ public class RagClient {
     private final String baseUrl;
     private final ObjectMapper objectMapper;
     private final boolean mockFallbackEnabled;
+    private final String internalToken;
 
     public RagClient(
             @Value("${knowflow.rag.base-url:http://localhost:8090}") String baseUrl,
             @Value("${knowflow.rag.connect-timeout-ms:3000}") int connectTimeoutMs,
             @Value("${knowflow.rag.read-timeout-ms:120000}") int readTimeoutMs,
             @Value("${knowflow.rag.fallback-enabled:${knowflow.rag.mock-fallback-enabled:false}}") boolean mockFallbackEnabled,
+            @Value("${knowflow.rag.internal-token:}") String internalToken,
             ObjectMapper objectMapper) {
         this.baseUrl = baseUrl;
         this.objectMapper = objectMapper;
         this.mockFallbackEnabled = mockFallbackEnabled;
+        this.internalToken = internalToken == null ? "" : internalToken;
         SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
         requestFactory.setConnectTimeout(connectTimeoutMs);
         requestFactory.setReadTimeout(readTimeoutMs);
@@ -76,6 +79,7 @@ public class RagClient {
         try {
             HttpHeaders headers = new HttpHeaders();
             headers.setContentType(MediaType.APPLICATION_JSON);
+            addInternalToken(headers);
             HttpEntity<Map<String, Object>> request = new HttpEntity<>(body, headers);
 
             T response = restTemplate.postForObject(baseUrl + path, request, responseType);
@@ -118,6 +122,12 @@ public class RagClient {
         return null;
     }
 
+    private void addInternalToken(HttpHeaders headers) {
+        if (!internalToken.isBlank()) {
+            headers.set("X-KnowFlow-Rag-Token", internalToken);
+        }
+    }
+
     public void askStream(Long kbId, String question, int topK, StreamListener listener) {
         stream("/rag/ask/stream", kbId, question, topK, listener);
     }
@@ -136,6 +146,7 @@ public class RagClient {
 
             HttpHeaders headers = new HttpHeaders();
             headers.setContentType(MediaType.APPLICATION_JSON);
+            addInternalToken(headers);
             HttpEntity<Map<String, Object>> request = new HttpEntity<>(body, headers);
 
             restTemplate.execute(baseUrl + path, org.springframework.http.HttpMethod.POST,

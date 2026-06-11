@@ -20,6 +20,8 @@ import org.springframework.mock.web.MockMultipartFile;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
@@ -90,6 +92,23 @@ class DocumentServiceImplTest {
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("文件类型与支持格式不匹配");
         verify(fileStorageService, never()).upload(file, "unused");
+    }
+
+    @Test
+    void uploadAcceptsPdfBasedOnMagicBytesInsteadOfClientContentType() {
+        stubKbOwnership();
+        MockMultipartFile file = new MockMultipartFile(
+                "file",
+                "note.pdf",
+                "application/octet-stream",
+                "%PDF-1.7".getBytes()
+        );
+        when(fileStorageService.upload(any(), anyString())).thenReturn("stored/note.pdf");
+        when(taskService.createParseTask(any(), eq(KB_ID))).thenReturn(99L);
+
+        assertThatCode(() -> service.upload(USER_ID, KB_ID, file)).doesNotThrowAnyException();
+
+        verify(fileStorageService).upload(eq(file), anyString());
     }
 
     @Test

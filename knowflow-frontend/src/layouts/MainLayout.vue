@@ -16,7 +16,7 @@ import { onMounted } from 'vue'
 
 const authStore = useAuthStore()
 onMounted(async () => {
-  if (authStore.token && !authStore.userInfo?.email) {
+  if (!authStore.userInfo?.email) {
     await authStore.fetchUserInfo().catch(() => {})
   }
 })

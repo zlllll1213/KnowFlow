@@ -1,13 +1,13 @@
-const TOKEN_KEY = 'knowflow_token'
+let activeSession = false
 
 export function getToken(): string | null {
-  return localStorage.getItem(TOKEN_KEY)
+  return activeSession ? 'cookie-session' : null
 }
 
-export function setToken(token: string): void {
-  localStorage.setItem(TOKEN_KEY, token)
+export function setToken(_token = 'cookie-session'): void {
+  activeSession = true
 }
 
 export function removeToken(): void {
-  localStorage.removeItem(TOKEN_KEY)
+  activeSession = false
 }

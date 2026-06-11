@@ -5,6 +5,8 @@ BACKEND_URL="${BACKEND_URL:-http://localhost:8081}"
 USERNAME="${DEMO_USERNAME:-demo}"
 PASSWORD="${DEMO_PASSWORD:-Demo123456}"
 EMAIL="${DEMO_EMAIL:-demo@example.com}"
+cookie_jar="$(mktemp /tmp/knowflow-demo-cookies-XXXXXX.txt)"
+trap 'rm -f "$cookie_jar"' EXIT
 
 json_get() {
   python3 - "$1" "$2" <<'PY'
@@ -18,23 +20,34 @@ print(value)
 PY
 }
 
+refresh_csrf() {
+  curl -fsS -c "$cookie_jar" -b "$cookie_jar" "$BACKEND_URL/api/auth/csrf" >/dev/null
+  awk '$6 == "XSRF-TOKEN" { token = $7 } END { print token }' "$cookie_jar"
+}
+
+csrf_token="$(refresh_csrf)"
+
 curl -fsS -X POST "$BACKEND_URL/api/auth/register" \
+  -b "$cookie_jar" -c "$cookie_jar" \
   -H "Content-Type: application/json" \
+  -H "X-XSRF-TOKEN: $csrf_token" \
   -d "{\"username\":\"$USERNAME\",\"password\":\"$PASSWORD\",\"email\":\"$EMAIL\"}" >/dev/null || true
 
-login_json="$(curl -fsS -X POST "$BACKEND_URL/api/auth/login" \
+curl -fsS -X POST "$BACKEND_URL/api/auth/login" \
+  -b "$cookie_jar" -c "$cookie_jar" \
   -H "Content-Type: application/json" \
-  -d "{\"username\":\"$USERNAME\",\"password\":\"$PASSWORD\"}")"
-token="$(json_get "$login_json" "data.token")"
+  -H "X-XSRF-TOKEN: $csrf_token" \
+  -d "{\"username\":\"$USERNAME\",\"password\":\"$PASSWORD\"}" >/dev/null
 
 kb_json="$(curl -fsS -X POST "$BACKEND_URL/api/kb" \
+  -b "$cookie_jar" -c "$cookie_jar" \
   -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $token" \
+  -H "X-XSRF-TOKEN: $csrf_token" \
   -d '{"name":"KnowFlow Demo KB","description":"用于演示 RAG + Agent + 引用溯源"}')"
 kb_id="$(json_get "$kb_json" "data.id")"
 
 tmpfile="$(mktemp /tmp/knowflow-demo-XXXXXX.md)"
-trap 'rm -f "$tmpfile"' EXIT
+trap 'rm -f "$cookie_jar" "$tmpfile"' EXIT
 cat > "$tmpfile" <<'EOF'
 # KnowFlow 架构说明
 
@@ -51,7 +64,8 @@ Agent 模式会先判断问题意图，再检索资料、生成回答，并通�
 EOF
 
 curl -fsS -X POST "$BACKEND_URL/api/document/upload" \
-  -H "Authorization: Bearer $token" \
+  -b "$cookie_jar" -c "$cookie_jar" \
+  -H "X-XSRF-TOKEN: $csrf_token" \
   -F "kbId=$kb_id" \
   -F "file=@$tmpfile;filename=knowflow-demo.md" >/dev/null
 

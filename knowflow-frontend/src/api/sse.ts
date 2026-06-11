@@ -1,4 +1,4 @@
-import { getToken } from '@/utils/token'
+import { csrfHeader, ensureCsrfToken } from '@/utils/csrf'
 import type { AgentResponse, ChatAskRequest, ChatStreamDone, RagSourceChunk } from '@/types/chat'
 
 export interface AskStreamCallbacks {
@@ -74,15 +74,16 @@ export async function streamRequest<TDone>(
   options: AskStreamOptions = {},
 ): Promise<TDone> {
   const baseURL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8081'
-  const token = getToken()
+  await ensureCsrfToken(baseURL)
   const response = await fetch(`${baseURL}${path}`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...csrfHeader(),
     },
     body: JSON.stringify(data),
     signal: options.signal,
+    credentials: 'include',
   })
 
   if (!response.ok || !response.body) {

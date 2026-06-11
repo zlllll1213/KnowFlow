@@ -1,6 +1,7 @@
 import axios from 'axios'
 import router from '@/router'
-import { getToken, removeToken } from '@/utils/token'
+import { removeToken } from '@/utils/token'
+import { ensureCsrfToken } from '@/utils/csrf'
 
 export interface Result<T = unknown> {
   code: number
@@ -11,6 +12,7 @@ export interface Result<T = unknown> {
 const request = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:8081',
   timeout: 15000,
+  withCredentials: true,
 })
 
 function redirectToLogin() {
@@ -25,9 +27,14 @@ function redirectToLogin() {
 }
 
 request.interceptors.request.use((config) => {
-  const token = getToken()
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`
+  const method = (config.method || 'get').toUpperCase()
+  if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
+    return ensureCsrfToken(request.defaults.baseURL || '').then((token) => {
+      if (token) {
+        config.headers['X-XSRF-TOKEN'] = token
+      }
+      return config
+    })
   }
   return config
 })

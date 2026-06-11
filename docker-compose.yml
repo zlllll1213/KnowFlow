@@ -7,7 +7,7 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-knowflow}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
     ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./knowflow-backend/sql/init.sql:/docker-entrypoint-initdb.d/init.sql
@@ -20,12 +20,15 @@ services:
   redis:
     image: redis:7-alpine
     container_name: knowflow-redis
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?set REDIS_PASSWORD in .env}
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD:?set REDIS_PASSWORD in .env}"]
     ports:
-      - "${REDIS_PORT:-6379}:6379"
+      - "127.0.0.1:${REDIS_PORT:-6379}:6379"
     volumes:
       - redis_data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD-SHELL", "redis-cli -a \"$${REDIS_PASSWORD}\" ping"]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -37,8 +40,8 @@ services:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:?set MINIO_ROOT_USER in .env}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD in .env}
     ports:
-      - "${MINIO_API_PORT:-9000}:9000"
-      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+      - "127.0.0.1:${MINIO_API_PORT:-9000}:9000"
+      - "127.0.0.1:${MINIO_CONSOLE_PORT:-9001}:9001"
     command: server /data --console-address ":9001"
     volumes:
       - minio_data:/data
@@ -68,6 +71,7 @@ services:
     environment:
       RAG_PORT: 8090
       RAG_DB_DSN: postgres://${POSTGRES_USER:-knowflow}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-knowflow}?sslmode=disable
+      RAG_INTERNAL_TOKEN: ${RAG_INTERNAL_TOKEN:?set RAG_INTERNAL_TOKEN in .env}
       RAG_LLM_PROVIDER: ${RAG_LLM_PROVIDER:-mock}
       RAG_LLM_API_KEY: ${RAG_LLM_API_KEY:-}
       RAG_LLM_BASE_URL: ${RAG_LLM_BASE_URL:-}
@@ -79,7 +83,7 @@ services:
       RAG_EMBEDDING_MODEL: ${RAG_EMBEDDING_MODEL:-text-embedding-3-small}
       RAG_EMBEDDING_DIM: ${RAG_EMBEDDING_DIM:-1536}
     ports:
-      - "${RAG_PORT:-8090}:8090"
+      - "127.0.0.1:${RAG_PORT:-8090}:8090"
     depends_on:
       postgres:
         condition: service_healthy
@@ -103,6 +107,7 @@ services:
       KNOWFLOW_DB_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
       KNOWFLOW_REDIS_HOST: redis
       KNOWFLOW_REDIS_PORT: 6379
+      KNOWFLOW_REDIS_PASSWORD: ${REDIS_PASSWORD:?set REDIS_PASSWORD in .env}
       KNOWFLOW_JWT_SECRET: ${KNOWFLOW_JWT_SECRET:?set KNOWFLOW_JWT_SECRET in .env}
       KNOWFLOW_MINIO_ENDPOINT: http://minio:9000
       KNOWFLOW_MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:?set MINIO_ROOT_USER in .env}
@@ -110,7 +115,10 @@ services:
       KNOWFLOW_MINIO_BUCKET: ${KNOWFLOW_MINIO_BUCKET:-knowflow}
       KNOWFLOW_STORAGE_TYPE: minio
       KNOWFLOW_RAG_BASE_URL: http://rag:8090
+      KNOWFLOW_RAG_INTERNAL_TOKEN: ${RAG_INTERNAL_TOKEN:?set RAG_INTERNAL_TOKEN in .env}
       KNOWFLOW_RAG_FALLBACK_ENABLED: "false"
+      KNOWFLOW_CORS_ALLOWED_ORIGINS: ${KNOWFLOW_CORS_ALLOWED_ORIGINS:-http://localhost:5173}
+      KNOWFLOW_COOKIE_SECURE: ${KNOWFLOW_COOKIE_SECURE:-false}
     ports:
       - "${BACKEND_PORT:-8081}:8081"
     depends_on:
@@ -133,7 +141,7 @@ services:
       context: ./knowflow-worker-python
     container_name: knowflow-worker
     environment:
-      WORKER_REDIS_URL: redis://redis:6379/0
+      WORKER_REDIS_URL: redis://:${REDIS_PASSWORD:?set REDIS_PASSWORD in .env}@redis:6379/0
       WORKER_DB_DSN: postgresql://knowflow:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-knowflow}
       WORKER_STORAGE_TYPE: minio
       WORKER_MINIO_ENDPOINT: minio:9000
@@ -143,6 +151,7 @@ services:
       WORKER_EMBEDDING_PROVIDER: ${WORKER_EMBEDDING_PROVIDER:-mock}
       WORKER_EMBEDDING_DIM: ${WORKER_EMBEDDING_DIM:-1536}
       WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-2}
+      WORKER_DB_MAX_CONNECTIONS: ${WORKER_DB_MAX_CONNECTIONS:-8}
       WORKER_TASK_RECOVERY_INTERVAL_SECONDS: ${WORKER_TASK_RECOVERY_INTERVAL_SECONDS:-60}
     depends_on:
       postgres:
@@ -166,12 +175,12 @@ services:
     environment:
       VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8081}
     ports:
-      - "${FRONTEND_PORT:-5173}:5173"
+      - "${FRONTEND_PORT:-5173}:80"
     depends_on:
       backend:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:5173"]
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:80"]
       interval: 15s
       timeout: 5s
       retries: 10

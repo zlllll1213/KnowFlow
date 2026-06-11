@@ -29,8 +29,10 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -50,7 +52,13 @@ public class ChatServiceImpl implements ChatService {
     @Qualifier("chatSseExecutor")
     private final Executor chatSseExecutor;
     @Value("${knowflow.sse.timeout-ms:120000}")
-    private long sseTimeoutMs;
+    private long sseTimeoutMs = 120000L;
+    @Value("${knowflow.sse.max-total-connections:100}")
+    private int maxTotalSseConnections = 100;
+    @Value("${knowflow.sse.max-connections-per-user:3}")
+    private int maxSseConnectionsPerUser = 3;
+    private final AtomicInteger activeSseConnections = new AtomicInteger();
+    private final ConcurrentHashMap<Long, AtomicInteger> activeSseConnectionsByUser = new ConcurrentHashMap<>();
 
     @Override
     public ChatSession createSession(Long userId, ChatSessionCreateRequest request) {
@@ -111,12 +119,9 @@ public class ChatServiceImpl implements ChatService {
     public SseEmitter askStream(Long userId, ChatAskRequest request) {
         ownershipChecker.requireKbOwner(userId, request.getKbId());
         ChatSession session = checkSessionOwnership(userId, request.getSessionId(), request.getKbId());
+        SseEmitter emitter = createLimitedEmitter(userId, "流式问答", request.getSessionId());
         saveMessage(userId, request.getSessionId(), request.getKbId(), "user", request.getQuestion(), Collections.emptyList());
 
-        SseEmitter emitter = new SseEmitter(sseTimeoutMs);
-        emitter.onTimeout(() -> log.warn("流式问答超时: userId={}, sessionId={}", userId, request.getSessionId()));
-        emitter.onError(e -> log.warn("流式问答连接异常: userId={}, sessionId={}, error={}",
-                userId, request.getSessionId(), e.getMessage()));
         chatSseExecutor.execute(() -> {
             StringBuilder answer = new StringBuilder();
             ListHolder sourcesHolder = new ListHolder();
@@ -203,9 +208,9 @@ public class ChatServiceImpl implements ChatService {
     public SseEmitter askAgentStream(Long userId, ChatAskRequest request) {
         ownershipChecker.requireKbOwner(userId, request.getKbId());
         ChatSession session = checkSessionOwnership(userId, request.getSessionId(), request.getKbId());
+        SseEmitter emitter = createLimitedEmitter(userId, "Agent 流式问答", request.getSessionId());
         saveMessage(userId, request.getSessionId(), request.getKbId(), "user", request.getQuestion(), Collections.emptyList());
 
-        SseEmitter emitter = new SseEmitter(sseTimeoutMs);
         chatSseExecutor.execute(() -> {
             StringBuilder answer = new StringBuilder();
             ListHolder sourcesHolder = new ListHolder();
@@ -340,6 +345,39 @@ public class ChatServiceImpl implements ChatService {
         } catch (Exception e) {
             log.warn("SSE 发送失败: event={}, error={}", event, e.getMessage());
             return false;
+        }
+    }
+
+    private SseEmitter createLimitedEmitter(Long userId, String label, Long sessionId) {
+        AtomicBoolean released = new AtomicBoolean(false);
+        AtomicInteger userConnections = activeSseConnectionsByUser.computeIfAbsent(userId, ignored -> new AtomicInteger());
+        int total = activeSseConnections.incrementAndGet();
+        int perUser = userConnections.incrementAndGet();
+        if (total > maxTotalSseConnections || perUser > maxSseConnectionsPerUser) {
+            releaseSseConnection(userId, userConnections, released);
+            throw new BusinessException(42901, "流式连接数过多，请稍后重试");
+        }
+
+        SseEmitter emitter = new SseEmitter(sseTimeoutMs);
+        emitter.onCompletion(() -> releaseSseConnection(userId, userConnections, released));
+        emitter.onTimeout(() -> {
+            log.warn("{}超时: userId={}, sessionId={}", label, userId, sessionId);
+            releaseSseConnection(userId, userConnections, released);
+        });
+        emitter.onError(e -> {
+            log.warn("{}连接异常: userId={}, sessionId={}, error={}", label, userId, sessionId, e.getMessage());
+            releaseSseConnection(userId, userConnections, released);
+        });
+        return emitter;
+    }
+
+    private void releaseSseConnection(Long userId, AtomicInteger userConnections, AtomicBoolean released) {
+        if (!released.compareAndSet(false, true)) {
+            return;
+        }
+        activeSseConnections.decrementAndGet();
+        if (userConnections.decrementAndGet() <= 0) {
+            activeSseConnectionsByUser.remove(userId, userConnections);
         }
     }
 

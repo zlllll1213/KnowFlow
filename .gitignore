@@ -41,3 +41,7 @@ reasonix.toml
 # Local agent/tooling state
 .codegraph/
 docs/superpowers/
+
+# Go local caches
+**/.gocache/
+**/.gomodcache/

@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -13,6 +14,8 @@ import (
 	"github.com/knowflow/rag-go/internal/service"
 	"github.com/knowflow/rag-go/internal/types"
 )
+
+const InternalTokenHeader = "X-KnowFlow-Rag-Token"
 
 type Handler struct {
 	rag *service.RAGService
@@ -27,7 +30,6 @@ func (h *Handler) Health(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"status":  "ok",
 		"version": "0.1.0",
-		"config":  h.cfg.PublicSummary(),
 	})
 }
 
@@ -156,6 +158,16 @@ func (h *Handler) AskAgentStream(c *gin.Context) {
 					writeSSE(c, flusher, "sources", gin.H{"type": "sources", "sources": sources})
 				default:
 				}
+				if meta, hasMeta := drainLatestAgentMeta(metaCh); hasMeta {
+					writeSSE(c, flusher, "meta", gin.H{
+						"type":       "meta",
+						"intent":     meta.Intent,
+						"confidence": meta.Confidence,
+						"trace":      meta.Trace,
+						"latencyMs":  meta.LatencyMs,
+					})
+					metaCh = nil
+				}
 				if err, hasErr := pendingStreamError(errCh); hasErr {
 					writeSSE(c, flusher, "error", gin.H{"type": "error", "message": err.Error()})
 					return
@@ -188,6 +200,19 @@ func RequestID() gin.HandlerFunc {
 	}
 }
 
+// RequireInternalToken protects RAG endpoints with a shared token used only
+// between the Spring backend and the Go RAG service.
+func RequireInternalToken(expectedToken string) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		actualToken := c.GetHeader(InternalTokenHeader)
+		if expectedToken == "" || subtle.ConstantTimeCompare([]byte(actualToken), []byte(expectedToken)) != 1 {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+			return
+		}
+		c.Next()
+	}
+}
+
 func prepareSSE(c *gin.Context) {
 	c.Header("Content-Type", "text/event-stream")
 	c.Header("Cache-Control", "no-cache")
@@ -210,5 +235,22 @@ func pendingStreamError(errCh <-chan error) (error, bool) {
 		return err, ok && err != nil
 	default:
 		return nil, false
+	}
+}
+
+func drainLatestAgentMeta(metaCh <-chan types.AgentResponse) (types.AgentResponse, bool) {
+	var latest types.AgentResponse
+	ok := false
+	for {
+		select {
+		case meta, open := <-metaCh:
+			if !open {
+				return latest, ok
+			}
+			latest = meta
+			ok = true
+		default:
+			return latest, ok
+		}
 	}
 }

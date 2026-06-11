@@ -9,5 +9,8 @@ FROM eclipse-temurin:17-jre
 WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
 COPY --from=build /app/target/*.jar app.jar
+RUN groupadd --system knowflow && useradd --system --gid knowflow --home-dir /app --shell /usr/sbin/nologin knowflow \
+    && chown -R knowflow:knowflow /app
+USER knowflow
 EXPOSE 8081
 ENTRYPOINT ["java", "-jar", "/app/app.jar"]

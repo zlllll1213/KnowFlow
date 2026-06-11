@@ -3,6 +3,9 @@ package llm
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -92,5 +95,31 @@ func TestDeepSeekThinkingCanBeEnabled(t *testing.T) {
 	compatible := provider.(*OpenAICompatibleProvider)
 	if compatible.thinkingMode != "enabled" {
 		t.Fatalf("unexpected DeepSeek thinking mode: %s", compatible.thinkingMode)
+	}
+}
+
+func TestOllamaChatStreamAcceptsLargeStreamLine(t *testing.T) {
+	largeToken := strings.Repeat("知", 70*1024)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/chat" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		fmt.Fprintf(w, `{"message":{"role":"assistant","content":"%s"},"done":false}`+"\n", largeToken)
+		fmt.Fprint(w, `{"message":{"role":"assistant","content":""},"done":true}`+"\n")
+	}))
+	defer server.Close()
+
+	provider := &OllamaProvider{
+		baseURL: server.URL,
+		model:   "llama3.1",
+		client:  server.Client(),
+	}
+	out := make(chan string, 1)
+
+	if err := provider.ChatStream(context.Background(), []Message{{Role: "user", Content: "hi"}}, out); err != nil {
+		t.Fatalf("ChatStream returned error: %v", err)
+	}
+	if got := <-out; got != largeToken {
+		t.Fatalf("unexpected token length: got %d want %d", len(got), len(largeToken))
 	}
 }

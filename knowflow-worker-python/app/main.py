@@ -21,6 +21,7 @@ import sys
 import tempfile
 import threading
 import time
+from urllib.parse import urlsplit, urlunsplit
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
 # 确保 app 包可导入
@@ -84,6 +85,26 @@ def _is_transient_error(exc: Exception) -> bool:
         pass
     msg = str(exc).lower()
     return any(kw in msg for kw in ("connection reset", "connection refused", "timeout", "temporarily unavailable"))
+
+
+def redact_url(value: str) -> str:
+    """隐藏 URL 中的密码，避免日志泄露连接凭据。"""
+    try:
+        parts = urlsplit(value)
+        if "@" not in parts.netloc:
+            return value
+        credentials, host = parts.netloc.rsplit("@", 1)
+        if ":" not in credentials:
+            return value
+        username, _ = credentials.split(":", 1)
+        return urlunsplit((parts.scheme, f"{username}:***@{host}", parts.path, parts.query, parts.fragment))
+    except Exception:
+        return value
+
+
+def database_pool_max_connections() -> int:
+    """数据库连接池上限由显式配置控制，避免随并发无限增长。"""
+    return config.db_max_connections
 
 
 def _with_connection(operation):
@@ -286,14 +307,14 @@ def main():
         return
 
     log.info("KnowFlow Python Worker 启动")
-    log.info("配置: redis=%s, db=%s, storage=%s, embedding=%s, concurrency=%d",
-             config.redis_url, config.db_dsn,
-             config.storage_type, config.embedding_provider, config.concurrency)
+    log.info("配置: redis=%s, db=%s, storage=%s, embedding=%s, concurrency=%d, dbMaxConnections=%d",
+             redact_url(config.redis_url), redact_url(config.db_dsn),
+             config.storage_type, config.embedding_provider, config.concurrency, config.db_max_connections)
 
     from app.queue import block_pop_task, create_redis_client
     from app.repository import init_pool, close_pool, init_pgvector_check
 
-    init_pool(minconn=1, maxconn=max(4, config.concurrency + 1))
+    init_pool(minconn=1, maxconn=database_pool_max_connections())
     init_pgvector_check()
     redis_client = create_redis_client()
     recover_tasks_on_start(redis_client)

@@ -250,6 +250,7 @@ func (p *OllamaProvider) ChatStream(ctx context.Context, messages []Message, out
 		return fmt.Errorf("Ollama 返回状态码 %d", resp.StatusCode)
 	}
 	scanner := bufio.NewScanner(resp.Body)
+	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 	for scanner.Scan() {
 		var data struct {
 			Message Message `json:"message"`

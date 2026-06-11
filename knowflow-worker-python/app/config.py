@@ -61,6 +61,7 @@ class Config:
 
     # Worker 并发数
     concurrency: int = int(os.getenv("WORKER_CONCURRENCY", "2"))
+    db_max_connections: int = int(os.getenv("WORKER_DB_MAX_CONNECTIONS", "8"))
     task_claim_stale_minutes: int = int(os.getenv("WORKER_TASK_CLAIM_STALE_MINUTES", "30"))
     task_recovery_on_start: bool = os.getenv("WORKER_TASK_RECOVERY_ON_START", "true").lower() == "true"
     task_recovery_limit: int = int(os.getenv("WORKER_TASK_RECOVERY_LIMIT", "500"))
@@ -110,6 +111,8 @@ class Config:
             errors.append("WORKER_MAX_CHUNKS_PER_DOC 必须大于 0")
         if self.concurrency <= 0:
             errors.append("WORKER_CONCURRENCY 必须大于 0")
+        if self.db_max_connections <= 0:
+            errors.append("WORKER_DB_MAX_CONNECTIONS 必须大于 0")
         if self.task_claim_stale_minutes <= 0:
             errors.append("WORKER_TASK_CLAIM_STALE_MINUTES 必须大于 0")
         if self.task_recovery_limit <= 0:

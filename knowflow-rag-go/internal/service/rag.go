@@ -201,7 +201,7 @@ func (s *RAGService) AskAgent(ctx context.Context, req types.RagRequest) (*types
 func (s *RAGService) AskAgentStream(ctx context.Context, req types.RagRequest) (<-chan string, <-chan []types.SourceChunk, <-chan types.AgentResponse, <-chan error) {
 	tokenCh := make(chan string, 100)
 	sourceCh := make(chan []types.SourceChunk, 1)
-	metaCh := make(chan types.AgentResponse, 1)
+	metaCh := newAgentMetaChannel()
 	errCh := make(chan error, 1)
 	go func() {
 		defer close(tokenCh)
@@ -291,6 +291,11 @@ func (s *RAGService) AskAgentStream(ctx context.Context, req types.RagRequest) (
 		sourceCh <- sources
 	}()
 	return tokenCh, sourceCh, metaCh, errCh
+}
+
+func newAgentMetaChannel() chan types.AgentResponse {
+	// Agent streaming emits initial routing metadata and final timing metadata.
+	return make(chan types.AgentResponse, 2)
 }
 
 func (s *RAGService) normalizeTopK(topK int) int {
