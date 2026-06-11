@@ -6,18 +6,17 @@ import com.knowflow.common.BusinessException;
 import com.knowflow.common.PageResult;
 import com.knowflow.entity.Document;
 import com.knowflow.entity.DocumentChunk;
-import com.knowflow.entity.KnowledgeBase;
 import com.knowflow.entity.ParseTask;
 import com.knowflow.mapper.DocumentChunkMapper;
 import com.knowflow.mapper.DocumentMapper;
-import com.knowflow.mapper.KnowledgeBaseMapper;
 import com.knowflow.mapper.ParseTaskMapper;
 import com.knowflow.service.DocumentService;
 import com.knowflow.service.TaskService;
+import com.knowflow.service.security.OwnershipChecker;
 import com.knowflow.util.FileStorageService;
 import com.knowflow.vo.DocumentVO;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
@@ -28,20 +27,36 @@ import java.util.stream.Collectors;
 
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class DocumentServiceImpl implements DocumentService {
 
     private final DocumentMapper documentMapper;
     private final DocumentChunkMapper documentChunkMapper;
-    private final KnowledgeBaseMapper kbMapper;
     private final ParseTaskMapper parseTaskMapper;
     private final TaskService taskService;
     private final FileStorageService fileStorageService;
+    private final OwnershipChecker ownershipChecker;
+    private final long maxFileSizeBytes;
+
+    public DocumentServiceImpl(DocumentMapper documentMapper,
+                               DocumentChunkMapper documentChunkMapper,
+                               ParseTaskMapper parseTaskMapper,
+                               TaskService taskService,
+                               FileStorageService fileStorageService,
+                               OwnershipChecker ownershipChecker,
+                               @Value("${knowflow.upload.max-file-size-bytes:52428800}") long maxFileSizeBytes) {
+        this.documentMapper = documentMapper;
+        this.documentChunkMapper = documentChunkMapper;
+        this.parseTaskMapper = parseTaskMapper;
+        this.taskService = taskService;
+        this.fileStorageService = fileStorageService;
+        this.ownershipChecker = ownershipChecker;
+        this.maxFileSizeBytes = maxFileSizeBytes;
+    }
 
     @Override
     @Transactional
     public DocumentVO upload(Long userId, Long kbId, MultipartFile file) {
-        checkKbOwnership(userId, kbId);
+        ownershipChecker.requireKbOwner(userId, kbId);
         validateFile(file);
 
         String originalName = file.getOriginalFilename();
@@ -75,7 +90,7 @@ public class DocumentServiceImpl implements DocumentService {
 
     @Override
     public PageResult<DocumentVO> listByKb(Long userId, Long kbId, long page, long size) {
-        checkKbOwnership(userId, kbId);
+        ownershipChecker.requireKbOwner(userId, kbId);
 
         Page<Document> result = documentMapper.selectPage(new Page<>(page, size),
                 new LambdaQueryWrapper<Document>()
@@ -97,12 +112,12 @@ public class DocumentServiceImpl implements DocumentService {
     public void delete(Long userId, Long docId) {
         Document doc = getAndCheckOwner(userId, docId);
 
+        safeDeleteFile(doc.getFilePath());
         documentChunkMapper.delete(new LambdaQueryWrapper<DocumentChunk>()
                 .eq(DocumentChunk::getDocumentId, doc.getId()));
         parseTaskMapper.delete(new LambdaQueryWrapper<ParseTask>()
                 .eq(ParseTask::getDocumentId, doc.getId()));
         documentMapper.deleteById(doc.getId());
-        safeDeleteFile(doc.getFilePath());
     }
 
     @Override
@@ -112,16 +127,6 @@ public class DocumentServiceImpl implements DocumentService {
     }
 
     // ---------- 私有方法 ----------
-
-    private void checkKbOwnership(Long userId, Long kbId) {
-        KnowledgeBase kb = kbMapper.selectById(kbId);
-        if (kb == null) {
-            throw new BusinessException(40020, "知识库不存在");
-        }
-        if (!kb.getUserId().equals(userId)) {
-            throw new BusinessException(40030, "无权访问该知识库");
-        }
-    }
 
     private Document getAndCheckOwner(Long userId, Long docId) {
         Document doc = documentMapper.selectById(docId);
@@ -148,6 +153,9 @@ public class DocumentServiceImpl implements DocumentService {
         if (file == null || file.isEmpty()) {
             throw new BusinessException(40040, "上传文件不能为空");
         }
+        if (file.getSize() > maxFileSizeBytes) {
+            throw new BusinessException(40043, "文件大小不能超过 " + maxFileSizeBytes + " 字节");
+        }
         String originalName = file.getOriginalFilename();
         String ext = getExtension(originalName);
         if (!List.of("pdf", "docx", "txt", "md", "markdown").contains(ext)) {
@@ -156,10 +164,12 @@ public class DocumentServiceImpl implements DocumentService {
         String contentType = file.getContentType();
         if (contentType != null && !contentType.isBlank()) {
             String lower = contentType.toLowerCase();
-            boolean accepted = lower.startsWith("text/")
-                    || lower.equals("application/pdf")
-                    || lower.equals("application/vnd.openxmlformats-officedocument.wordprocessingml.document")
-                    || lower.equals("application/octet-stream");
+            boolean accepted = switch (ext) {
+                case "pdf" -> lower.equals("application/pdf");
+                case "docx" -> lower.equals("application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+                case "txt", "md", "markdown" -> lower.startsWith("text/") || lower.equals("text/markdown");
+                default -> false;
+            };
             if (!accepted) {
                 throw new BusinessException(40042, "文件类型与支持格式不匹配");
             }

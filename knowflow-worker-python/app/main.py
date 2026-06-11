@@ -19,6 +19,7 @@ import logging
 import os
 import sys
 import tempfile
+import threading
 import time
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
@@ -33,6 +34,25 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
 log = logging.getLogger("worker")
+_minio_client = None
+_minio_client_lock = threading.Lock()
+
+
+def _get_minio_client():
+    """复用 MinIO 客户端，避免每个任务重复创建连接对象。"""
+    global _minio_client
+    if _minio_client is not None:
+        return _minio_client
+    with _minio_client_lock:
+        if _minio_client is None:
+            from minio import Minio
+            _minio_client = Minio(
+                config.minio_endpoint,
+                access_key=config.minio_access_key,
+                secret_key=config.minio_secret_key,
+                secure=config.minio_secure,
+            )
+        return _minio_client
 
 
 def _call_with_retry(fn, max_attempts: int = 3, step_name: str = ""):
@@ -189,14 +209,7 @@ def _download_file(file_path: str, local_path: str):
     from app.parser import download_from_local, download_from_minio
 
     if config.storage_type == "minio":
-        from minio import Minio
-        client = Minio(
-            config.minio_endpoint,
-            access_key=config.minio_access_key,
-            secret_key=config.minio_secret_key,
-            secure=config.minio_secure,
-        )
-        download_from_minio(client, config.minio_bucket, file_path, local_path)
+        download_from_minio(_get_minio_client(), config.minio_bucket, file_path, local_path)
     else:
         download_from_local(config.storage_local_path, file_path, local_path)
 
@@ -248,14 +261,7 @@ def run_checks():
     check_database()
 
     if config.storage_type == "minio":
-        from minio import Minio
-        client = Minio(
-            config.minio_endpoint,
-            access_key=config.minio_access_key,
-            secret_key=config.minio_secret_key,
-            secure=config.minio_secure,
-        )
-        if not client.bucket_exists(config.minio_bucket):
+        if not _get_minio_client().bucket_exists(config.minio_bucket):
             raise RuntimeError(f"MinIO bucket 不存在: {config.minio_bucket}")
     else:
         root = Path(config.storage_local_path).resolve()

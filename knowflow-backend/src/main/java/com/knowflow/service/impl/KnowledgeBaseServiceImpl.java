@@ -16,6 +16,7 @@ import com.knowflow.mapper.DocumentMapper;
 import com.knowflow.mapper.KnowledgeBaseMapper;
 import com.knowflow.service.DocumentService;
 import com.knowflow.service.KnowledgeBaseService;
+import com.knowflow.service.security.OwnershipChecker;
 import com.knowflow.vo.KbVO;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -23,6 +24,8 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.util.List;
+import java.util.Map;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 @Service
@@ -34,12 +37,18 @@ public class KnowledgeBaseServiceImpl implements KnowledgeBaseService {
     private final DocumentService documentService;
     private final ChatSessionMapper chatSessionMapper;
     private final ChatMessageMapper chatMessageMapper;
+    private final OwnershipChecker ownershipChecker;
 
     @Override
     public KbVO create(Long userId, KbCreateRequest request) {
+        String name = request.getName() == null ? "" : request.getName().trim();
+        if (name.isEmpty()) {
+            throw new BusinessException(40022, "知识库名称不能为空");
+        }
         KnowledgeBase kb = new KnowledgeBase();
         kb.setUserId(userId);
-        kb.setName(request.getName());
+        // 服务层保留兜底校验，避免内部调用绕过 Controller 参数校验。
+        kb.setName(name);
         kb.setDescription(request.getDescription());
         kbMapper.insert(kb);
         return toVO(kb);
@@ -51,7 +60,11 @@ public class KnowledgeBaseServiceImpl implements KnowledgeBaseService {
                 new LambdaQueryWrapper<KnowledgeBase>()
                         .eq(KnowledgeBase::getUserId, userId)
                         .orderByDesc(KnowledgeBase::getUpdatedAt));
-        List<KbVO> records = result.getRecords().stream().map(this::toVO).collect(Collectors.toList());
+        List<KnowledgeBase> knowledgeBases = result.getRecords();
+        Map<Long, KbDocumentCounts> countsByKbId = batchDocumentCounts(userId, knowledgeBases);
+        List<KbVO> records = knowledgeBases.stream()
+                .map(kb -> toVO(kb, countsByKbId))
+                .collect(Collectors.toList());
         return PageResult.of(result.getTotal(), result.getCurrent(), result.getSize(), records);
     }
 
@@ -99,14 +112,7 @@ public class KnowledgeBaseServiceImpl implements KnowledgeBaseService {
 
     /** 获取知识库并校验所有者 */
     private KnowledgeBase getAndCheckOwner(Long userId, Long kbId) {
-        KnowledgeBase kb = kbMapper.selectById(kbId);
-        if (kb == null) {
-            throw new BusinessException(40020, "知识库不存在");
-        }
-        if (!kb.getUserId().equals(userId)) {
-            throw new BusinessException(40030, "无权访问该知识库");
-        }
-        return kb;
+        return ownershipChecker.requireKbOwner(userId, kbId);
     }
 
     private KbVO toVO(KnowledgeBase kb) {
@@ -121,6 +127,48 @@ public class KnowledgeBaseServiceImpl implements KnowledgeBaseService {
                 .build();
     }
 
+    private KbVO toVO(KnowledgeBase kb, Map<Long, KbDocumentCounts> countsByKbId) {
+        KbDocumentCounts counts = countsByKbId.getOrDefault(kb.getId(), KbDocumentCounts.ZERO);
+        return KbVO.builder()
+                .id(kb.getId())
+                .name(kb.getName())
+                .description(kb.getDescription())
+                .documentCount(counts.documentCount())
+                .doneCount(counts.doneCount())
+                .createdAt(kb.getCreatedAt())
+                .updatedAt(kb.getUpdatedAt())
+                .build();
+    }
+
+    private Map<Long, KbDocumentCounts> batchDocumentCounts(Long userId, List<KnowledgeBase> knowledgeBases) {
+        if (knowledgeBases.isEmpty()) {
+            return Map.of();
+        }
+        List<Long> kbIds = knowledgeBases.stream()
+                .map(KnowledgeBase::getId)
+                .toList();
+        return documentMapper.selectKbDocumentCounts(userId, kbIds).stream()
+                .map(this::toKbDocumentCounts)
+                .collect(Collectors.toMap(KbDocumentCounts::kbId, Function.identity()));
+    }
+
+    private KbDocumentCounts toKbDocumentCounts(Map<String, Object> row) {
+        Long kbId = number(row, "kb_id", "kbId", "kbid");
+        Long documentCount = number(row, "document_count", "documentCount", "documentcount");
+        Long doneCount = number(row, "done_count", "doneCount", "donecount");
+        return new KbDocumentCounts(kbId, documentCount, doneCount);
+    }
+
+    private Long number(Map<String, Object> row, String... keys) {
+        for (String key : keys) {
+            Object value = row.get(key);
+            if (value instanceof Number number) {
+                return number.longValue();
+            }
+        }
+        return 0L;
+    }
+
     private Long countDocuments(Long userId, Long kbId, String status) {
         LambdaQueryWrapper<Document> query = new LambdaQueryWrapper<Document>()
                 .eq(Document::getUserId, userId)
@@ -129,5 +177,9 @@ public class KnowledgeBaseServiceImpl implements KnowledgeBaseService {
             query.eq(Document::getStatus, status);
         }
         return documentMapper.selectCount(query);
+    }
+
+    private record KbDocumentCounts(Long kbId, Long documentCount, Long doneCount) {
+        private static final KbDocumentCounts ZERO = new KbDocumentCounts(0L, 0L, 0L);
     }
 }

@@ -86,13 +86,16 @@ CREATE TABLE IF NOT EXISTS parse_task (
     error_message TEXT         DEFAULT '',
     retry_count   INT          NOT NULL DEFAULT 0,
     last_error_at TIMESTAMP,
+    is_deleted    SMALLINT     NOT NULL DEFAULT 0,
     created_at    TIMESTAMP    NOT NULL DEFAULT NOW(),
     updated_at    TIMESTAMP    NOT NULL DEFAULT NOW()
 );
 COMMENT ON TABLE  parse_task IS '文档解析任务表';
 COMMENT ON COLUMN parse_task.status IS 'PENDING / PROCESSING / PARSING / EMBEDDING / DONE / FAILED / CANCELLED';
-CREATE INDEX IF NOT EXISTS idx_task_document_id ON parse_task(document_id);
-CREATE INDEX IF NOT EXISTS idx_task_status      ON parse_task(status);
+COMMENT ON COLUMN parse_task.is_deleted IS '逻辑删除: 0=正常, 1=已删除';
+ALTER TABLE parse_task ADD COLUMN IF NOT EXISTS is_deleted SMALLINT NOT NULL DEFAULT 0;
+CREATE INDEX IF NOT EXISTS idx_task_document_id ON parse_task(document_id) WHERE is_deleted = 0;
+CREATE INDEX IF NOT EXISTS idx_task_status      ON parse_task(status) WHERE is_deleted = 0;
 
 -- 6. 聊天会话表
 CREATE TABLE IF NOT EXISTS chat_session (
@@ -122,6 +125,7 @@ COMMENT ON TABLE  chat_message IS '聊天消息表';
 COMMENT ON COLUMN chat_message.role IS 'user / assistant';
 COMMENT ON COLUMN chat_message.sources IS '引用来源 SourceChunk 数组';
 CREATE INDEX IF NOT EXISTS idx_msg_session_id ON chat_message(session_id);
+CREATE INDEX IF NOT EXISTS idx_msg_session_created_at ON chat_message(session_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_msg_kb_user_created_at ON chat_message(kb_id, user_id, created_at DESC);
 
 -- 8. RAG / Agent 调用日志
@@ -144,3 +148,4 @@ CREATE TABLE IF NOT EXISTS rag_call_log (
 );
 CREATE INDEX IF NOT EXISTS idx_rag_log_kb_created_at ON rag_call_log(kb_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_rag_log_user_created_at ON rag_call_log(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_rag_log_created_at ON rag_call_log(created_at);

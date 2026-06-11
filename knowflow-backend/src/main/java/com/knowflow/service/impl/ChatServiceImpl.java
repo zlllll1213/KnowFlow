@@ -2,7 +2,6 @@ package com.knowflow.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.knowflow.common.BusinessException;
 import com.knowflow.common.PageResult;
@@ -14,21 +13,23 @@ import com.knowflow.dto.RagResponse;
 import com.knowflow.dto.RagSourceChunk;
 import com.knowflow.entity.ChatMessage;
 import com.knowflow.entity.ChatSession;
-import com.knowflow.entity.KnowledgeBase;
 import com.knowflow.mapper.ChatMessageMapper;
 import com.knowflow.mapper.ChatSessionMapper;
-import com.knowflow.mapper.KnowledgeBaseMapper;
 import com.knowflow.service.ChatService;
+import com.knowflow.service.RagCallLogService;
+import com.knowflow.service.security.OwnershipChecker;
 import com.knowflow.util.RagClient;
 import com.knowflow.vo.ChatMessageVO;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.util.Collections;
 import java.util.List;
-import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
 import java.time.LocalDateTime;
@@ -42,13 +43,18 @@ public class ChatServiceImpl implements ChatService {
 
     private final ChatSessionMapper sessionMapper;
     private final ChatMessageMapper messageMapper;
-    private final KnowledgeBaseMapper kbMapper;
+    private final OwnershipChecker ownershipChecker;
     private final RagClient ragClient;
+    private final RagCallLogService ragCallLogService;
     private final ObjectMapper objectMapper;
+    @Qualifier("chatSseExecutor")
+    private final Executor chatSseExecutor;
+    @Value("${knowflow.sse.timeout-ms:120000}")
+    private long sseTimeoutMs;
 
     @Override
     public ChatSession createSession(Long userId, ChatSessionCreateRequest request) {
-        checkKbOwnership(userId, request.getKbId());
+        ownershipChecker.requireKbOwner(userId, request.getKbId());
 
         ChatSession session = new ChatSession();
         session.setKbId(request.getKbId());
@@ -60,7 +66,7 @@ public class ChatServiceImpl implements ChatService {
 
     @Override
     public PageResult<ChatSession> listSessions(Long userId, Long kbId, long page, long size) {
-        checkKbOwnership(userId, kbId);
+        ownershipChecker.requireKbOwner(userId, kbId);
 
         Page<ChatSession> result = sessionMapper.selectPage(new Page<>(page, size),
                 new LambdaQueryWrapper<ChatSession>()
@@ -72,7 +78,7 @@ public class ChatServiceImpl implements ChatService {
 
     @Override
     public ChatMessageVO ask(Long userId, ChatAskRequest request) {
-        checkKbOwnership(userId, request.getKbId());
+        ownershipChecker.requireKbOwner(userId, request.getKbId());
 
         ChatSession session = checkSessionOwnership(userId, request.getSessionId(), request.getKbId());
         saveMessage(userId, request.getSessionId(), request.getKbId(), "user", request.getQuestion(), Collections.emptyList());
@@ -83,6 +89,8 @@ public class ChatServiceImpl implements ChatService {
         List<RagSourceChunk> sources = ragResponse.getSources() == null
                 ? Collections.emptyList()
                 : ragResponse.getSources();
+        ragCallLogService.record(request.getKbId(), userId, request.getSessionId(), "rag", "",
+                request.getQuestion(), 5, sources.size(), ragResponse.getLatencyMs(), 0.0, Collections.emptyList());
 
         // 保存助手回答
         ChatMessage assistantMsg = saveMessage(userId, request.getSessionId(), request.getKbId(), "assistant", answer, sources);
@@ -101,86 +109,91 @@ public class ChatServiceImpl implements ChatService {
 
     @Override
     public SseEmitter askStream(Long userId, ChatAskRequest request) {
-        checkKbOwnership(userId, request.getKbId());
+        ownershipChecker.requireKbOwner(userId, request.getKbId());
         ChatSession session = checkSessionOwnership(userId, request.getSessionId(), request.getKbId());
         saveMessage(userId, request.getSessionId(), request.getKbId(), "user", request.getQuestion(), Collections.emptyList());
 
-        SseEmitter emitter = new SseEmitter(120_000L);
+        SseEmitter emitter = new SseEmitter(sseTimeoutMs);
         emitter.onTimeout(() -> log.warn("流式问答超时: userId={}, sessionId={}", userId, request.getSessionId()));
         emitter.onError(e -> log.warn("流式问答连接异常: userId={}, sessionId={}, error={}",
                 userId, request.getSessionId(), e.getMessage()));
-        CompletableFuture.runAsync(() -> {
+        chatSseExecutor.execute(() -> {
             StringBuilder answer = new StringBuilder();
             ListHolder sourcesHolder = new ListHolder();
             AtomicBoolean completed = new AtomicBoolean(false);
 
-            ragClient.askStream(request.getKbId(), request.getQuestion(), 5, new RagClient.StreamListener() {
-                @Override
-                public void onToken(String token) {
-                    if (token == null || token.isEmpty()) {
-                        return;
+            try {
+                ragClient.askStream(request.getKbId(), request.getQuestion(), 5, new RagClient.StreamListener() {
+                    @Override
+                    public void onToken(String token) {
+                        if (token == null || token.isEmpty()) {
+                            return;
+                        }
+                        answer.append(token);
+                        if (!sendSse(emitter, "token", Collections.singletonMap("content", token))) {
+                            completed.set(true);
+                        }
                     }
-                    answer.append(token);
-                    if (!sendSse(emitter, "token", Collections.singletonMap("content", token))) {
-                        completed.set(true);
+
+                    @Override
+                    public void onSources(List<RagSourceChunk> sources) {
+                        sourcesHolder.sources = sources == null ? Collections.emptyList() : sources;
+                        sendSse(emitter, "sources", sourcesHolder.sources);
                     }
-                }
 
-                @Override
-                public void onSources(List<RagSourceChunk> sources) {
-                    sourcesHolder.sources = sources == null ? Collections.emptyList() : sources;
-                    sendSse(emitter, "sources", sourcesHolder.sources);
-                }
+                    @Override
+                    public void onError(String message) {
+                        if (completed.compareAndSet(false, true)) {
+                            sendSse(emitter, "error", Collections.singletonMap("message", message));
+                            emitter.complete();
+                        }
+                    }
 
-                @Override
-                public void onError(String message) {
-                    if (completed.compareAndSet(false, true)) {
-                        sendSse(emitter, "error", Collections.singletonMap("message", message));
+                    @Override
+                    public void onDone() {
+                        if (!completed.compareAndSet(false, true)) {
+                            return;
+                        }
+                        if (answer.isEmpty()) {
+                            sendSse(emitter, "error", Collections.singletonMap("message", "RAG 服务未返回回答"));
+                            emitter.complete();
+                            return;
+                        }
+                        ChatMessage assistantMsg = saveMessage(userId, request.getSessionId(), request.getKbId(),
+                                "assistant", answer.toString(), sourcesHolder.sources);
+                        touchSession(session);
+                        ragCallLogService.record(request.getKbId(), userId, request.getSessionId(), "rag", "",
+                                request.getQuestion(), 5, sourcesHolder.sources.size(), 0L, 0.0, Collections.emptyList());
+                        sendSse(emitter, "done", ChatMessageVO.builder()
+                                .id(assistantMsg.getId())
+                                .role(assistantMsg.getRole())
+                                .content(assistantMsg.getContent())
+                                .sources(sourcesHolder.sources)
+                                .createdAt(assistantMsg.getCreatedAt())
+                                .build());
                         emitter.complete();
                     }
-                }
-
-                @Override
-                public void onDone() {
-                    if (!completed.compareAndSet(false, true)) {
-                        return;
-                    }
-                    if (answer.isEmpty()) {
-                        sendSse(emitter, "error", Collections.singletonMap("message", "RAG 服务未返回回答"));
-                        emitter.complete();
-                        return;
-                    }
-                    ChatMessage assistantMsg = saveMessage(userId, request.getSessionId(), request.getKbId(),
-                            "assistant", answer.toString(), sourcesHolder.sources);
-                    touchSession(session);
-                    sendSse(emitter, "done", ChatMessageVO.builder()
-                            .id(assistantMsg.getId())
-                            .role(assistantMsg.getRole())
-                            .content(assistantMsg.getContent())
-                            .sources(sourcesHolder.sources)
-                            .createdAt(assistantMsg.getCreatedAt())
-                            .build());
-                    emitter.complete();
-                }
-            });
-        }).exceptionally(e -> {
-            log.warn("流式问答失败", e);
-            sendSse(emitter, "error", Collections.singletonMap("message", e.getMessage()));
-            emitter.complete();
-            return null;
+                });
+            } catch (RuntimeException e) {
+                log.warn("流式问答失败", e);
+                sendSse(emitter, "error", Collections.singletonMap("message", e.getMessage()));
+                emitter.complete();
+            }
         });
         return emitter;
     }
 
     @Override
     public AgentResponse askAgent(Long userId, ChatAskRequest request) {
-        checkKbOwnership(userId, request.getKbId());
+        ownershipChecker.requireKbOwner(userId, request.getKbId());
         ChatSession session = checkSessionOwnership(userId, request.getSessionId(), request.getKbId());
         saveMessage(userId, request.getSessionId(), request.getKbId(), "user", request.getQuestion(), Collections.emptyList());
 
         AgentResponse response = ragClient.askAgent(request.getKbId(), request.getQuestion(), 5);
         List<RagSourceChunk> sources = response.getSources() == null ? Collections.emptyList() : response.getSources();
         saveMessage(userId, request.getSessionId(), request.getKbId(), "assistant", response.getAnswer(), sources);
+        ragCallLogService.record(request.getKbId(), userId, request.getSessionId(), "agent", response.getIntent(),
+                request.getQuestion(), 5, sources.size(), response.getLatencyMs(), response.getConfidence(), response.getTrace());
         touchSession(session);
         response.setSources(sources);
         return response;
@@ -188,18 +201,19 @@ public class ChatServiceImpl implements ChatService {
 
     @Override
     public SseEmitter askAgentStream(Long userId, ChatAskRequest request) {
-        checkKbOwnership(userId, request.getKbId());
+        ownershipChecker.requireKbOwner(userId, request.getKbId());
         ChatSession session = checkSessionOwnership(userId, request.getSessionId(), request.getKbId());
         saveMessage(userId, request.getSessionId(), request.getKbId(), "user", request.getQuestion(), Collections.emptyList());
 
-        SseEmitter emitter = new SseEmitter(120_000L);
-        CompletableFuture.runAsync(() -> {
+        SseEmitter emitter = new SseEmitter(sseTimeoutMs);
+        chatSseExecutor.execute(() -> {
             StringBuilder answer = new StringBuilder();
             ListHolder sourcesHolder = new ListHolder();
             AgentMetaHolder meta = new AgentMetaHolder();
             AtomicBoolean completed = new AtomicBoolean(false);
 
-            ragClient.askAgentStream(request.getKbId(), request.getQuestion(), 5, new RagClient.StreamListener() {
+            try {
+                ragClient.askAgentStream(request.getKbId(), request.getQuestion(), 5, new RagClient.StreamListener() {
                 @Override
                 public void onToken(String token) {
                     if (token == null || token.isEmpty()) {
@@ -249,19 +263,27 @@ public class ChatServiceImpl implements ChatService {
                     if (!completed.compareAndSet(false, true)) {
                         return;
                     }
+                    if (answer.isEmpty()) {
+                        sendSse(emitter, "error", Collections.singletonMap("message", "Agent 服务未返回回答"));
+                        emitter.complete();
+                        return;
+                    }
                     saveMessage(userId, request.getSessionId(), request.getKbId(), "assistant",
                             answer.toString(), sourcesHolder.sources);
                     touchSession(session);
+                    ragCallLogService.record(request.getKbId(), userId, request.getSessionId(), "agent", meta.intent,
+                            request.getQuestion(), 5, sourcesHolder.sources.size(), meta.latencyMs,
+                            meta.confidence, meta.trace);
                     sendSse(emitter, "done", new AgentResponse(meta.intent, answer.toString(),
                             sourcesHolder.sources, meta.confidence, meta.trace, meta.latencyMs));
                     emitter.complete();
                 }
-            });
-        }).exceptionally(e -> {
-            log.warn("Agent 流式问答失败", e);
-            sendSse(emitter, "error", Collections.singletonMap("message", "Agent 问答失败"));
-            emitter.complete();
-            return null;
+                });
+            } catch (RuntimeException e) {
+                log.warn("Agent 流式问答失败", e);
+                sendSse(emitter, "error", Collections.singletonMap("message", "Agent 问答失败"));
+                emitter.complete();
+            }
         });
         return emitter;
     }
@@ -283,38 +305,11 @@ public class ChatServiceImpl implements ChatService {
                         .id(m.getId())
                         .role(m.getRole())
                         .content(m.getContent())
-                        .sources(deserializeSources(m.getSources()))
+                        .sources(m.getSources() == null ? Collections.emptyList() : m.getSources())
                         .createdAt(m.getCreatedAt())
                         .build())
                 .collect(Collectors.toList());
         return PageResult.of(result.getTotal(), result.getCurrent(), result.getSize(), records);
-    }
-
-    // ---------- 序列化辅助 ----------
-
-    @SuppressWarnings("unchecked")
-    private List<com.knowflow.dto.RagSourceChunk> deserializeSources(String sourcesJson) {
-        if (sourcesJson == null || sourcesJson.isEmpty()) {
-            return Collections.emptyList();
-        }
-        try {
-            return objectMapper.readValue(sourcesJson,
-                    objectMapper.getTypeFactory().constructCollectionType(List.class,
-                            com.knowflow.dto.RagSourceChunk.class));
-        } catch (JsonProcessingException e) {
-            log.warn("sources 反序列化失败", e);
-            return Collections.emptyList();
-        }
-    }
-
-    private void checkKbOwnership(Long userId, Long kbId) {
-        KnowledgeBase kb = kbMapper.selectById(kbId);
-        if (kb == null) {
-            throw new BusinessException(40020, "知识库不存在");
-        }
-        if (!kb.getUserId().equals(userId)) {
-            throw new BusinessException(40030, "无权访问该知识库");
-        }
     }
 
     private ChatSession checkSessionOwnership(Long userId, Long sessionId, Long kbId) {
@@ -333,11 +328,7 @@ public class ChatServiceImpl implements ChatService {
         msg.setUserId(userId);
         msg.setRole(role);
         msg.setContent(content);
-        try {
-            msg.setSources(objectMapper.writeValueAsString(sources == null ? Collections.emptyList() : sources));
-        } catch (JsonProcessingException e) {
-            msg.setSources("[]");
-        }
+        msg.setSources(sources == null ? Collections.emptyList() : sources);
         messageMapper.insert(msg);
         return msg;
     }

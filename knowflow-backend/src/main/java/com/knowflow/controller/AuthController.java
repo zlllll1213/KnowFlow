@@ -4,9 +4,12 @@ import com.knowflow.common.Result;
 import com.knowflow.dto.LoginRequest;
 import com.knowflow.dto.LoginResponse;
 import com.knowflow.dto.RegisterRequest;
+import com.knowflow.common.BusinessException;
+import com.knowflow.security.AuthRateLimiter;
 import com.knowflow.security.LoginUser;
 import com.knowflow.service.AuthService;
 import com.knowflow.vo.UserVO;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -18,19 +21,41 @@ import org.springframework.web.bind.annotation.*;
 public class AuthController {
 
     private final AuthService authService;
+    private final AuthRateLimiter authRateLimiter;
 
     /** 注册 */
     @PostMapping("/register")
-    public Result<UserVO> register(@Valid @RequestBody RegisterRequest request) {
-        UserVO user = authService.register(request);
-        return Result.success("注册成功", user);
+    public Result<UserVO> register(@Valid @RequestBody RegisterRequest request,
+                                   HttpServletRequest httpRequest) {
+        String clientIp = clientIp(httpRequest);
+        authRateLimiter.checkRegisterIpAllowed(clientIp);
+        try {
+            UserVO user = authService.register(request);
+            authRateLimiter.recordRegisterIpSuccess(clientIp);
+            return Result.success("注册成功", user);
+        } catch (BusinessException e) {
+            // 注册失败同样计数，避免同一来源无限枚举用户名和邮箱。
+            authRateLimiter.recordRegisterIpFailure(clientIp);
+            throw e;
+        }
     }
 
     /** 登录 */
     @PostMapping("/login")
-    public Result<LoginResponse> login(@Valid @RequestBody LoginRequest request) {
-        LoginResponse resp = authService.login(request);
-        return Result.success("登录成功", resp);
+    public Result<LoginResponse> login(@Valid @RequestBody LoginRequest request,
+                                       HttpServletRequest httpRequest) {
+        String clientIp = clientIp(httpRequest);
+        authRateLimiter.checkLoginIpAllowed(clientIp);
+        try {
+            LoginResponse resp = authService.login(request);
+            authRateLimiter.recordLoginIpSuccess(clientIp);
+            return Result.success("登录成功", resp);
+        } catch (BusinessException e) {
+            if (e.getCode() == 40012) {
+                authRateLimiter.recordLoginIpFailure(clientIp);
+            }
+            throw e;
+        }
     }
 
     /** 获取当前用户信息 */
@@ -38,5 +63,13 @@ public class AuthController {
     public Result<UserVO> me(@AuthenticationPrincipal LoginUser loginUser) {
         UserVO user = authService.getCurrentUser(loginUser.getUserId());
         return Result.success(user);
+    }
+
+    private String clientIp(HttpServletRequest request) {
+        String forwardedFor = request.getHeader("X-Forwarded-For");
+        if (forwardedFor != null && !forwardedFor.isBlank()) {
+            return forwardedFor.split(",")[0].trim();
+        }
+        return request.getRemoteAddr();
     }
 }

@@ -2,6 +2,7 @@ package com.knowflow.dto;
 
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
 import lombok.Data;
 
 @Data
@@ -14,5 +15,6 @@ public class ChatAskRequest {
     private Long sessionId;
 
     @NotBlank(message = "问题不能为空")
+    @Size(max = 2000, message = "问题长度不能超过 2000 字")
     private String question;
 }

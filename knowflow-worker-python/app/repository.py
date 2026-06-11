@@ -5,6 +5,7 @@
 
 import logging
 import json
+import threading
 from datetime import datetime, timezone
 
 import psycopg2
@@ -25,15 +26,17 @@ except ImportError:
 
 # 线程安全连接池（启动时初始化）
 _connection_pool: "pool.ThreadedConnectionPool | None" = None
+_pool_lock = threading.Lock()
 
 
 def init_pool(minconn: int = 1, maxconn: int = 4):
     """初始化数据库连接池（线程安全）。"""
     global _connection_pool
-    if _connection_pool is not None:
-        return
-    _connection_pool = pool.ThreadedConnectionPool(minconn, maxconn, config.db_dsn)
-    log.info("DB 连接池已初始化: min=%d, max=%d", minconn, maxconn)
+    with _pool_lock:
+        if _connection_pool is not None:
+            return
+        _connection_pool = pool.ThreadedConnectionPool(minconn, maxconn, config.db_dsn)
+        log.info("DB 连接池已初始化: min=%d, max=%d", minconn, maxconn)
 
 
 def get_connection():
@@ -54,9 +57,10 @@ def put_connection(conn):
 def close_pool():
     """关闭连接池。"""
     global _connection_pool
-    if _connection_pool is not None:
-        _connection_pool.closeall()
-        _connection_pool = None
+    with _pool_lock:
+        if _connection_pool is not None:
+            _connection_pool.closeall()
+            _connection_pool = None
 
 
 def fetch_task(conn, task_id: int) -> ParseTask | None:

@@ -23,6 +23,7 @@ func TestLoadDoesNotInheritLLMKeyForEmbedding(t *testing.T) {
 
 func TestValidateRejectsDeepSeekEmbeddingProvider(t *testing.T) {
 	cfg := Load()
+	cfg.DBDSN = "postgres://knowflow:secret@localhost:5432/knowflow?sslmode=disable"
 	cfg.LLMProvider = "deepseek"
 	cfg.LLMAPIKey = "test-deepseek-key"
 	cfg.EmbeddingProvider = "deepseek"
@@ -39,6 +40,7 @@ func TestValidateRejectsDeepSeekEmbeddingProvider(t *testing.T) {
 
 func TestValidateDeepSeekLLMRequiresOnlyLLMKey(t *testing.T) {
 	cfg := Load()
+	cfg.DBDSN = "postgres://knowflow:secret@localhost:5432/knowflow?sslmode=disable"
 	cfg.LLMProvider = "deepseek"
 	cfg.LLMAPIKey = "test-deepseek-key"
 	cfg.EmbeddingProvider = "mock"
@@ -46,5 +48,18 @@ func TestValidateDeepSeekLLMRequiresOnlyLLMKey(t *testing.T) {
 
 	if err := cfg.Validate(); err != nil {
 		t.Fatalf("Validate returned error: %v", err)
+	}
+}
+
+func TestValidateRequiresExplicitDBDSN(t *testing.T) {
+	cfg := Load()
+	cfg.DBDSN = ""
+
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("expected empty RAG_DB_DSN to be rejected")
+	}
+	if !strings.Contains(err.Error(), "RAG_DB_DSN 不能为空") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }

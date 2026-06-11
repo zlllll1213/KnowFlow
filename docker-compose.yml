@@ -5,7 +5,7 @@ services:
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-knowflow}
       POSTGRES_USER: ${POSTGRES_USER:-knowflow}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-knowflow123}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
     volumes:
@@ -34,8 +34,8 @@ services:
     image: minio/minio:latest
     container_name: knowflow-minio
     environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin123}
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?set MINIO_ROOT_USER in .env}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD in .env}
     ports:
       - "${MINIO_API_PORT:-9000}:9000"
       - "${MINIO_CONSOLE_PORT:-9001}:9001"
@@ -54,8 +54,8 @@ services:
       minio:
         condition: service_healthy
     environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin123}
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?set MINIO_ROOT_USER in .env}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD in .env}
       KNOWFLOW_MINIO_BUCKET: ${KNOWFLOW_MINIO_BUCKET:-knowflow}
     entrypoint: >
       /bin/sh -c "mc alias set local http://minio:9000 $$MINIO_ROOT_USER $$MINIO_ROOT_PASSWORD &&
@@ -67,7 +67,7 @@ services:
     container_name: knowflow-rag
     environment:
       RAG_PORT: 8090
-      RAG_DB_DSN: postgres://${POSTGRES_USER:-knowflow}:${POSTGRES_PASSWORD:-knowflow123}@postgres:5432/${POSTGRES_DB:-knowflow}?sslmode=disable
+      RAG_DB_DSN: postgres://${POSTGRES_USER:-knowflow}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-knowflow}?sslmode=disable
       RAG_LLM_PROVIDER: ${RAG_LLM_PROVIDER:-mock}
       RAG_LLM_API_KEY: ${RAG_LLM_API_KEY:-}
       RAG_LLM_BASE_URL: ${RAG_LLM_BASE_URL:-}
@@ -100,13 +100,13 @@ services:
       KNOWFLOW_DB_PORT: 5432
       KNOWFLOW_DB_NAME: ${POSTGRES_DB:-knowflow}
       KNOWFLOW_DB_USER: ${POSTGRES_USER:-knowflow}
-      KNOWFLOW_DB_PASSWORD: ${POSTGRES_PASSWORD:-knowflow123}
+      KNOWFLOW_DB_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
       KNOWFLOW_REDIS_HOST: redis
       KNOWFLOW_REDIS_PORT: 6379
-      KNOWFLOW_JWT_SECRET: ${KNOWFLOW_JWT_SECRET:-change_me_to_a_random_256bit_string_please}
+      KNOWFLOW_JWT_SECRET: ${KNOWFLOW_JWT_SECRET:?set KNOWFLOW_JWT_SECRET in .env}
       KNOWFLOW_MINIO_ENDPOINT: http://minio:9000
-      KNOWFLOW_MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
-      KNOWFLOW_MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin123}
+      KNOWFLOW_MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:?set MINIO_ROOT_USER in .env}
+      KNOWFLOW_MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD in .env}
       KNOWFLOW_MINIO_BUCKET: ${KNOWFLOW_MINIO_BUCKET:-knowflow}
       KNOWFLOW_STORAGE_TYPE: minio
       KNOWFLOW_RAG_BASE_URL: http://rag:8090
@@ -134,11 +134,11 @@ services:
     container_name: knowflow-worker
     environment:
       WORKER_REDIS_URL: redis://redis:6379/0
-      WORKER_DB_DSN: postgresql://knowflow:${POSTGRES_PASSWORD:-knowflow123}@postgres:5432/${POSTGRES_DB:-knowflow}
+      WORKER_DB_DSN: postgresql://knowflow:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-knowflow}
       WORKER_STORAGE_TYPE: minio
       WORKER_MINIO_ENDPOINT: minio:9000
-      WORKER_MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
-      WORKER_MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin123}
+      WORKER_MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:?set MINIO_ROOT_USER in .env}
+      WORKER_MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD in .env}
       WORKER_MINIO_BUCKET: ${KNOWFLOW_MINIO_BUCKET:-knowflow}
       WORKER_EMBEDDING_PROVIDER: ${WORKER_EMBEDDING_PROVIDER:-mock}
       WORKER_EMBEDDING_DIM: ${WORKER_EMBEDDING_DIM:-1536}

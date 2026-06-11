@@ -835,7 +835,7 @@ spring:
   datasource:
     url: jdbc:postgresql://localhost:5432/knowflow
     username: knowflow
-    password: ${DB_PASSWORD:knowflow123}
+    password: ${DB_PASSWORD}
   data:
     redis:
       host: localhost
@@ -843,13 +843,13 @@ spring:
 
 knowflow:
   jwt:
-    secret: ${JWT_SECRET:dev-secret-please-change-in-prod}
+    secret: ${JWT_SECRET}
     expiration: 86400000
   storage:
     minio:
       endpoint: http://localhost:9000
-      access-key: ${MINIO_ACCESS_KEY:minioadmin}
-      secret-key: ${MINIO_SECRET_KEY:minioadmin123}
+      access-key: ${MINIO_ACCESS_KEY}
+      secret-key: ${MINIO_SECRET_KEY}
       bucket: knowflow
   rag:
     service-url: http://localhost:8090

@@ -208,6 +208,6 @@
 - `cd knowflow-backend && mvn test -q`: passed after Dashboard recentSessions and TaskService afterCommit logging changes.
 - `cd knowflow-frontend && npm run build`: passed after KnowledgeBaseDetail polling changes.
 - `cd knowflow-worker-python && python3 -m compileall app`: passed after Worker short-connection and periodic recovery changes.
-- `cd knowflow-worker-python && WORKER_REDIS_URL=redis://localhost:16379/0 WORKER_DB_DSN=postgresql://knowflow:knowflow123@localhost:15432/knowflow WORKER_STORAGE_TYPE=minio WORKER_MINIO_ENDPOINT=localhost:19000 WORKER_MINIO_ACCESS_KEY=minioadmin WORKER_MINIO_SECRET_KEY=minioadmin123 WORKER_MINIO_BUCKET=knowflow ./.venv/bin/python -m app.main --check`: passed.
+- `cd knowflow-worker-python && WORKER_REDIS_URL=redis://localhost:16379/0 WORKER_DB_DSN=postgresql://knowflow:${POSTGRES_PASSWORD}@localhost:15432/knowflow WORKER_STORAGE_TYPE=minio WORKER_MINIO_ENDPOINT=localhost:19000 WORKER_MINIO_ACCESS_KEY=${MINIO_ROOT_USER} WORKER_MINIO_SECRET_KEY=${MINIO_ROOT_PASSWORD} WORKER_MINIO_BUCKET=knowflow ./.venv/bin/python -m app.main --check`: passed.
 - `docker compose -p knowflow-smoke -f docker-compose.yml -f docker-compose.smoke.yml up --build -d`: passed after rebuilding backend/rag/worker/frontend images.
 - `BACKEND_URL=http://localhost:18081 RAG_URL=http://localhost:18090 TIMEOUT_SECONDS=120 ./scripts/smoke-e2e.sh`: passed after Reasonix review hardening.

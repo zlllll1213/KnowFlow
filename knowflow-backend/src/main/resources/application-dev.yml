@@ -8,7 +8,7 @@ spring:
     driver-class-name: org.postgresql.Driver
     url: jdbc:postgresql://${KNOWFLOW_DB_HOST:localhost}:${KNOWFLOW_DB_PORT:5432}/${KNOWFLOW_DB_NAME:knowflow}
     username: ${KNOWFLOW_DB_USER:knowflow}
-    password: ${KNOWFLOW_DB_PASSWORD:knowflow123}
+    password: ${KNOWFLOW_DB_PASSWORD}
 
   data:
     redis:
@@ -16,21 +16,21 @@ spring:
       port: ${KNOWFLOW_REDIS_PORT:6379}
       timeout: 3000ms
 
-# MyBatis-Plus SQL 日志（开发环境开启）
+# MyBatis-Plus SQL 日志（开发环境通过日志系统控制）
 mybatis-plus:
   configuration:
-    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+    log-impl: org.apache.ibatis.logging.slf4j.Slf4jImpl
 
 # JWT 配置
 jwt:
-  secret: ${KNOWFLOW_JWT_SECRET:KnowFlow-Dev-JWT-Secret-Key-2024-Must-Be-256-Bits-Long!!}
+  secret: ${KNOWFLOW_JWT_SECRET}
   expiration: ${KNOWFLOW_JWT_EXPIRATION_MS:86400000}
 
 # MinIO 配置
 minio:
   endpoint: ${KNOWFLOW_MINIO_ENDPOINT:http://localhost:9000}
-  access-key: ${KNOWFLOW_MINIO_ACCESS_KEY:minioadmin}
-  secret-key: ${KNOWFLOW_MINIO_SECRET_KEY:minioadmin123}
+  access-key: ${KNOWFLOW_MINIO_ACCESS_KEY:}
+  secret-key: ${KNOWFLOW_MINIO_SECRET_KEY:}
   bucket: ${KNOWFLOW_MINIO_BUCKET:knowflow}
 
 # 存储配置
@@ -46,6 +46,13 @@ knowflow:
     read-timeout-ms: ${KNOWFLOW_RAG_READ_TIMEOUT_MS:120000}
     fallback-enabled: ${KNOWFLOW_RAG_FALLBACK_ENABLED:true}
     mock-fallback-enabled: ${KNOWFLOW_RAG_MOCK_FALLBACK_ENABLED:${KNOWFLOW_RAG_FALLBACK_ENABLED:true}}
+  auth:
+    max-login-attempts: ${KNOWFLOW_AUTH_MAX_LOGIN_ATTEMPTS:5}
+    login-lock-seconds: ${KNOWFLOW_AUTH_LOGIN_LOCK_SECONDS:300}
+  upload:
+    max-file-size-bytes: ${KNOWFLOW_UPLOAD_MAX_FILE_SIZE_BYTES:52428800}
+  sse:
+    timeout-ms: ${KNOWFLOW_SSE_TIMEOUT_MS:120000}
 
 # 详细日志
 logging:

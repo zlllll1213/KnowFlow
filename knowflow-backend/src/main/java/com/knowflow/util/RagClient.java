@@ -96,14 +96,26 @@ public class RagClient {
                 }
                 return response;
             }
+            T fallback = mockFallback(responseType, kbId, question);
+            if (fallback != null) {
+                return fallback;
+            }
         } catch (RestClientException e) {
             log.warn("Go RAG Service 调用失败: path={}, kbId={}, error={}", path, kbId, e.getMessage());
-            if (mockFallbackEnabled && responseType == RagResponse.class) {
-                return responseType.cast(mockResponse(kbId, question));
+            T fallback = mockFallback(responseType, kbId, question);
+            if (fallback != null) {
+                return fallback;
             }
         }
 
         throw new BusinessException(50301, "Go RAG Service unavailable, fallback disabled.");
+    }
+
+    private <T> T mockFallback(Class<T> responseType, Long kbId, String question) {
+        if (mockFallbackEnabled && responseType == RagResponse.class) {
+            return responseType.cast(mockResponse(kbId, question));
+        }
+        return null;
     }
 
     public void askStream(Long kbId, String question, int topK, StreamListener listener) {
@@ -220,11 +232,4 @@ public class RagClient {
         return resp;
     }
 
-    // ---------- 兼容旧代码 ----------
-
-    /** @deprecated 使用 ask() 替代 */
-    @Deprecated
-    public String mockAsk(String question, Long kbId) {
-        return ask(kbId, question, 5).getAnswer();
-    }
 }

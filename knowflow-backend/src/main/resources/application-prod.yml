@@ -47,6 +47,13 @@ knowflow:
     read-timeout-ms: ${KNOWFLOW_RAG_READ_TIMEOUT_MS:120000}
     fallback-enabled: ${KNOWFLOW_RAG_FALLBACK_ENABLED:false}
     mock-fallback-enabled: ${KNOWFLOW_RAG_MOCK_FALLBACK_ENABLED:${KNOWFLOW_RAG_FALLBACK_ENABLED:false}}
+  auth:
+    max-login-attempts: ${KNOWFLOW_AUTH_MAX_LOGIN_ATTEMPTS:5}
+    login-lock-seconds: ${KNOWFLOW_AUTH_LOGIN_LOCK_SECONDS:300}
+  upload:
+    max-file-size-bytes: ${KNOWFLOW_UPLOAD_MAX_FILE_SIZE_BYTES:52428800}
+  sse:
+    timeout-ms: ${KNOWFLOW_SSE_TIMEOUT_MS:120000}
 
 # 生产日志级别
 logging:

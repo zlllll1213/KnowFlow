@@ -92,7 +92,7 @@ docker compose up -d
 | Redis 7 | `6379` | 缓存 & 解析任务队列 |
 | MinIO | `9000` / `9001` | 对象存储（API / Console） |
 
-MinIO 默认凭据：`minioadmin / minioadmin123`
+MinIO 凭据必须通过 `.env` 中的 `MINIO_ROOT_USER` / `MINIO_ROOT_PASSWORD` 显式配置。
 
 文件存储由 `storage.type` 控制：开发环境默认 `local`，生产环境默认 `minio`。数据库 `document.file_path` 保存的是统一 object key，例如 `1/2/abcd1234_demo.pdf`；本地模式会把它映射到 `storage.local-path` 下，MinIO 模式会把它作为 object name。删除文档或知识库时会同步清理原始文件、解析任务和文档切片。
 

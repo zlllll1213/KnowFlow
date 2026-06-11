@@ -29,7 +29,7 @@ type Config struct {
 func Load() *Config {
 	return &Config{
 		Port:           getEnv("RAG_PORT", "8090"),
-		DBDSN:          getEnv("RAG_DB_DSN", "postgres://knowflow:knowflow123@localhost:5432/knowflow?sslmode=disable"),
+		DBDSN:          getEnv("RAG_DB_DSN", ""),
 		LLMProvider:    getEnv("RAG_LLM_PROVIDER", "mock"),
 		LLMAPIKey:      getEnv("RAG_LLM_API_KEY", ""),
 		LLMBaseURL:     getEnv("RAG_LLM_BASE_URL", ""),

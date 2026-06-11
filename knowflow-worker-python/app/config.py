@@ -25,7 +25,7 @@ class Config:
     db_port: int = int(os.getenv("WORKER_DB_PORT", "5432"))
     db_name: str = os.getenv("WORKER_DB_NAME", "knowflow")
     db_user: str = os.getenv("WORKER_DB_USER", "knowflow")
-    db_password: str = os.getenv("WORKER_DB_PASSWORD", "knowflow123")
+    db_password: str = os.getenv("WORKER_DB_PASSWORD", "")
     db_dsn_override: str = os.getenv("WORKER_DB_DSN", "")
 
     @property
@@ -36,8 +36,8 @@ class Config:
 
     # MinIO
     minio_endpoint: str = os.getenv("WORKER_MINIO_ENDPOINT", "localhost:9000")
-    minio_access_key: str = os.getenv("WORKER_MINIO_ACCESS_KEY", "minioadmin")
-    minio_secret_key: str = os.getenv("WORKER_MINIO_SECRET_KEY", "minioadmin123")
+    minio_access_key: str = os.getenv("WORKER_MINIO_ACCESS_KEY", "")
+    minio_secret_key: str = os.getenv("WORKER_MINIO_SECRET_KEY", "")
     minio_bucket: str = os.getenv("WORKER_MINIO_BUCKET", "knowflow")
     minio_secure: bool = os.getenv("WORKER_MINIO_SECURE", "false").lower() == "true"
 
@@ -77,6 +77,8 @@ class Config:
             errors.append("WORKER_STORAGE_TYPE 仅支持 local/minio")
         if self.storage_type == "local" and not self.storage_local_path:
             errors.append("WORKER_STORAGE_LOCAL_PATH 不能为空")
+        if not self.db_dsn_override and not self.db_password:
+            errors.append("WORKER_DB_PASSWORD 不能为空，或显式配置 WORKER_DB_DSN")
         if self.storage_type == "minio":
             if not self.minio_endpoint:
                 errors.append("WORKER_MINIO_ENDPOINT 不能为空")

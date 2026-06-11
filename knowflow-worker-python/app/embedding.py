@@ -13,6 +13,7 @@ from app.config import config
 from app.types import DocumentChunk
 
 log = logging.getLogger(__name__)
+_mock_warning_logged = False
 
 
 def generate_embeddings(chunks: list[DocumentChunk]) -> None:
@@ -31,10 +32,16 @@ def generate_embeddings(chunks: list[DocumentChunk]) -> None:
 
 
 def _mock_embed(chunks: list[DocumentChunk]) -> None:
+    global _mock_warning_logged
     dim = config.embedding_dim
     for chunk in chunks:
         chunk.embedding = _mock_embedding_for_text(chunk.content, dim)
-    log.warning("MOCK embedding: 生成了 %d 个确定性非零向量 (dim=%d)", len(chunks), dim)
+    if not _mock_warning_logged:
+        # mock provider 只在首次使用时警告，避免批量解析时刷屏。
+        log.warning("MOCK embedding: 生成确定性非零向量 (dim=%d)", dim)
+        _mock_warning_logged = True
+    else:
+        log.debug("MOCK embedding: chunks=%d, dim=%d", len(chunks), dim)
 
 
 def _mock_embedding_for_text(text: str, dim: int) -> list[float]:

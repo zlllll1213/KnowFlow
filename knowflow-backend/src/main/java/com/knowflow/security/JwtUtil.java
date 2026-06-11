@@ -25,6 +25,9 @@ public class JwtUtil {
         if (secret == null || secret.getBytes(StandardCharsets.UTF_8).length < 32) {
             throw new IllegalStateException("JWT secret 长度至少需要 32 字节");
         }
+        if (expiration <= 0) {
+            throw new IllegalStateException("JWT expiration 必须大于 0 毫秒");
+        }
         if (prod && secret.startsWith("KnowFlow-Dev-")) {
             throw new IllegalStateException("生产环境禁止使用开发 JWT secret");
         }

@@ -2,6 +2,7 @@ package com.knowflow.dto;
 
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import lombok.Data;
 
@@ -13,7 +14,8 @@ public class RegisterRequest {
     private String username;
 
     @NotBlank(message = "密码不能为空")
-    @Size(min = 6, max = 128, message = "密码长度 6-128")
+    @Size(min = 8, max = 128, message = "密码长度 8-128")
+    @Pattern(regexp = "^(?=.*[A-Za-z])(?=.*\\d).+$", message = "密码必须同时包含字母和数字")
     private String password;
 
     @NotBlank(message = "邮箱不能为空")

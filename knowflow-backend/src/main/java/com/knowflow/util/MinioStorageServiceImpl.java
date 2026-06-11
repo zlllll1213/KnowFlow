@@ -14,6 +14,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.InputStream;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * MinIO 对象存储实现。
@@ -27,7 +28,8 @@ public class MinioStorageServiceImpl implements FileStorageService {
 
     private final MinioClient minioClient;
     private final MinioConfig minioConfig;
-    private volatile boolean bucketReady;
+    private final AtomicBoolean bucketReady = new AtomicBoolean(false);
+    private final Object bucketReadyLock = new Object();
 
     @Override
     public String upload(MultipartFile file, String objectKey) {
@@ -78,12 +80,12 @@ public class MinioStorageServiceImpl implements FileStorageService {
     }
 
     private void ensureBucket(String bucket) throws Exception {
-        if (bucketReady) {
+        if (bucketReady.get()) {
             return;
         }
 
-        synchronized (this) {
-            if (bucketReady) {
+        synchronized (bucketReadyLock) {
+            if (bucketReady.get()) {
                 return;
             }
 
@@ -98,7 +100,7 @@ public class MinioStorageServiceImpl implements FileStorageService {
                                 .build());
                 log.info("MinIO bucket 已创建: {}", bucket);
             }
-            bucketReady = true;
+            bucketReady.set(true);
         }
     }
 }
