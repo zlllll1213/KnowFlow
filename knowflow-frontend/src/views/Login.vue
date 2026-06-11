@@ -83,6 +83,7 @@ import { ref, reactive } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus/es/components/message/index.mjs'
 import { useAuthStore } from '@/stores/auth'
+import { safeInternalRedirect } from '@/utils/redirect'
 import type { FormInstance, FormRules } from 'element-plus'
 
 const router = useRouter()
@@ -110,8 +111,7 @@ async function handleLogin() {
   loading.value = true
   try {
     await authStore.login(form)
-    const redirect = typeof route.query.redirect === 'string' ? route.query.redirect : '/dashboard'
-    router.push(redirect.startsWith('/') ? redirect : '/dashboard')
+    router.push(safeInternalRedirect(route.query.redirect))
   } catch (e: any) {
     ElMessage.error(e.message || '登录失败')
   } finally {

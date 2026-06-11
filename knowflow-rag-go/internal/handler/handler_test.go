@@ -8,6 +8,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/knowflow/rag-go/internal/config"
+	"github.com/knowflow/rag-go/internal/types"
 )
 
 func TestPendingStreamErrorPrefersBufferedError(t *testing.T) {
@@ -114,4 +115,20 @@ func contains(value string, needle string) bool {
 		}
 		return false
 	}()
+}
+
+func TestDrainLatestAgentMetaReturnsFinalBufferedMeta(t *testing.T) {
+	metaCh := make(chan types.AgentResponse, 2)
+	metaCh <- types.AgentResponse{Intent: "qa", LatencyMs: 0}
+	metaCh <- types.AgentResponse{Intent: "qa", LatencyMs: 42}
+	close(metaCh)
+
+	meta, ok := drainLatestAgentMeta(metaCh)
+
+	if !ok {
+		t.Fatal("expected final meta")
+	}
+	if meta.LatencyMs != 42 {
+		t.Fatalf("expected final latency 42, got %d", meta.LatencyMs)
+	}
 }

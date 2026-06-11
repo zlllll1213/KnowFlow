@@ -1,5 +1,6 @@
 const CSRF_COOKIE = 'XSRF-TOKEN'
 const CSRF_HEADER = 'X-XSRF-TOKEN'
+let inflight: Promise<string | null> | null = null
 
 export function getCookie(name: string): string | null {
   const cookie = globalThis.document?.cookie
@@ -27,12 +28,20 @@ export async function ensureCsrfToken(baseURL: string): Promise<string | null> {
   if (!globalThis.fetch) return null
 
   const normalizedBase = baseURL.replace(/\/$/, '')
-  const response = await fetch(`${normalizedBase}/api/auth/csrf`, {
-    method: 'GET',
-    credentials: 'include',
-  })
-  if (!response.ok) {
-    throw new Error(`CSRF 初始化失败: ${response.status}`)
+  if (!inflight) {
+    inflight = fetch(`${normalizedBase}/api/auth/csrf`, {
+      method: 'GET',
+      credentials: 'include',
+    })
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error(`CSRF 初始化失败: ${response.status}`)
+        }
+        return getCsrfToken()
+      })
+      .finally(() => {
+        inflight = null
+      })
   }
-  return getCsrfToken()
+  return inflight
 }

@@ -6,11 +6,13 @@ import org.springframework.http.ResponseCookie;
 import org.springframework.stereotype.Component;
 
 import java.time.Duration;
+import java.util.regex.Pattern;
 
 @Component
 public class AuthCookieService {
 
     public static final String AUTH_COOKIE_NAME = "KNOWFLOW_AUTH";
+    private static final Pattern COOKIE_DOMAIN_PATTERN = Pattern.compile("^\\.?[A-Za-z0-9-]+(\\.[A-Za-z0-9-]+)*$");
 
     private final boolean secure;
     private final String domain;
@@ -21,6 +23,7 @@ public class AuthCookieService {
                              @Value("${jwt.expiration}") long expirationMs) {
         this.secure = secure;
         this.domain = domain == null ? "" : domain.trim();
+        validateDomain(this.domain);
         this.expirationMs = expirationMs;
     }
 
@@ -48,5 +51,15 @@ public class AuthCookieService {
             builder.domain(domain);
         }
         return builder;
+    }
+
+    private void validateDomain(String domain) {
+        if (domain.isBlank()) {
+            return;
+        }
+        if (domain.contains(":") || domain.contains("/") || domain.contains("\\") || domain.chars().anyMatch(Character::isWhitespace)
+                || !COOKIE_DOMAIN_PATTERN.matcher(domain).matches()) {
+            throw new IllegalStateException("Cookie domain 格式非法");
+        }
     }
 }

@@ -158,6 +158,16 @@ func (h *Handler) AskAgentStream(c *gin.Context) {
 					writeSSE(c, flusher, "sources", gin.H{"type": "sources", "sources": sources})
 				default:
 				}
+				if meta, hasMeta := drainLatestAgentMeta(metaCh); hasMeta {
+					writeSSE(c, flusher, "meta", gin.H{
+						"type":       "meta",
+						"intent":     meta.Intent,
+						"confidence": meta.Confidence,
+						"trace":      meta.Trace,
+						"latencyMs":  meta.LatencyMs,
+					})
+					metaCh = nil
+				}
 				if err, hasErr := pendingStreamError(errCh); hasErr {
 					writeSSE(c, flusher, "error", gin.H{"type": "error", "message": err.Error()})
 					return
@@ -225,5 +235,22 @@ func pendingStreamError(errCh <-chan error) (error, bool) {
 		return err, ok && err != nil
 	default:
 		return nil, false
+	}
+}
+
+func drainLatestAgentMeta(metaCh <-chan types.AgentResponse) (types.AgentResponse, bool) {
+	var latest types.AgentResponse
+	ok := false
+	for {
+		select {
+		case meta, open := <-metaCh:
+			if !open {
+				return latest, ok
+			}
+			latest = meta
+			ok = true
+		default:
+			return latest, ok
+		}
 	}
 }
