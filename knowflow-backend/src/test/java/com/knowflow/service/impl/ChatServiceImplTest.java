@@ -1,6 +1,7 @@
 package com.knowflow.service.impl;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.knowflow.common.BusinessException;
 import com.knowflow.dto.ChatAskRequest;
 import com.knowflow.entity.ChatMessage;
 import com.knowflow.entity.ChatSession;
@@ -16,8 +17,10 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
@@ -78,6 +81,21 @@ class ChatServiceImplTest {
         verify(sessionMapper, never()).updateById(any());
         verify(ragCallLogService, never()).record(any(), any(), any(), any(), any(), any(), any(Integer.class),
                 any(Integer.class), any(), any(), any());
+    }
+
+    @Test
+    void askStreamRejectsRequestWhenTotalSseConnectionLimitIsReached() {
+        ChatAskRequest request = request("请总结知识库");
+        when(ownershipChecker.requireKbOwner(USER_ID, KB_ID)).thenReturn(kb());
+        when(sessionMapper.selectById(SESSION_ID)).thenReturn(session());
+        ReflectionTestUtils.setField(service, "maxTotalSseConnections", 0);
+
+        assertThatThrownBy(() -> service.askStream(USER_ID, request))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("流式连接数过多");
+
+        verify(messageMapper, never()).insert(any());
+        verify(ragClient, never()).askStream(any(), any(), any(Integer.class), any());
     }
 
     private ChatAskRequest request(String question) {

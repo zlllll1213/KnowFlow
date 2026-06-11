@@ -18,6 +18,7 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
 
 @Configuration
 @EnableWebSecurity
@@ -31,7 +32,7 @@ public class SecurityConfig {
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http
             .cors(Customizer.withDefaults())
-            .csrf(AbstractHttpConfigurer::disable)
+            .csrf(csrf -> csrf.csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse()))
             .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> auth
                 .dispatcherTypeMatchers(DispatcherType.ERROR, DispatcherType.ASYNC).permitAll()
@@ -43,7 +44,7 @@ public class SecurityConfig {
                     "/doc.html", "/webjars/**"
                 ).permitAll()
                 // 公开接口
-                .requestMatchers("/api/auth/register", "/api/auth/login", "/api/health", "/error").permitAll()
+                .requestMatchers("/api/auth/register", "/api/auth/login", "/api/auth/csrf", "/api/auth/logout", "/api/health", "/error").permitAll()
                 // 其余接口需要认证
                 .anyRequest().authenticated()
             )

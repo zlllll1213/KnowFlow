@@ -21,8 +21,15 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.nio.charset.CharacterCodingException;
+import java.nio.charset.CodingErrorAction;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.UUID;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -161,18 +168,62 @@ public class DocumentServiceImpl implements DocumentService {
         if (!List.of("pdf", "docx", "txt", "md", "markdown").contains(ext)) {
             throw new BusinessException(40041, "仅支持 PDF、DOCX、TXT、MD、Markdown 文件");
         }
-        String contentType = file.getContentType();
-        if (contentType != null && !contentType.isBlank()) {
-            String lower = contentType.toLowerCase();
-            boolean accepted = switch (ext) {
-                case "pdf" -> lower.equals("application/pdf");
-                case "docx" -> lower.equals("application/vnd.openxmlformats-officedocument.wordprocessingml.document");
-                case "txt", "md", "markdown" -> lower.startsWith("text/") || lower.equals("text/markdown");
+        if (!matchesDeclaredType(file, ext)) {
+            throw new BusinessException(40042, "文件类型与支持格式不匹配");
+        }
+    }
+
+    private boolean matchesDeclaredType(MultipartFile file, String ext) {
+        try {
+            return switch (ext) {
+                case "pdf" -> hasPrefix(file.getBytes(), "%PDF-".getBytes(StandardCharsets.US_ASCII));
+                case "docx" -> isDocx(file);
+                case "txt", "md", "markdown" -> isUtf8Text(file.getBytes());
                 default -> false;
             };
-            if (!accepted) {
-                throw new BusinessException(40042, "文件类型与支持格式不匹配");
+        } catch (IOException e) {
+            throw new BusinessException(40042, "文件类型与支持格式不匹配");
+        }
+    }
+
+    private boolean hasPrefix(byte[] content, byte[] prefix) {
+        if (content.length < prefix.length) {
+            return false;
+        }
+        for (int i = 0; i < prefix.length; i++) {
+            if (content[i] != prefix[i]) {
+                return false;
             }
+        }
+        return true;
+    }
+
+    private boolean isDocx(MultipartFile file) throws IOException {
+        try (ZipInputStream zip = new ZipInputStream(file.getInputStream())) {
+            ZipEntry entry;
+            while ((entry = zip.getNextEntry()) != null) {
+                if ("word/document.xml".equals(entry.getName())) {
+                    return true;
+                }
+            }
+            return false;
+        }
+    }
+
+    private boolean isUtf8Text(byte[] content) {
+        for (byte value : content) {
+            if (value == 0) {
+                return false;
+            }
+        }
+        try {
+            StandardCharsets.UTF_8.newDecoder()
+                    .onMalformedInput(CodingErrorAction.REPORT)
+                    .onUnmappableCharacter(CodingErrorAction.REPORT)
+                    .decode(ByteBuffer.wrap(content));
+            return true;
+        } catch (CharacterCodingException e) {
+            return false;
         }
     }
 

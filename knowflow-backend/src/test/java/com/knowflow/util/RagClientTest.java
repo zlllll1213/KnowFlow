@@ -14,6 +14,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.http.HttpMethod.POST;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.header;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withStatus;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
@@ -22,11 +23,12 @@ class RagClientTest {
 
     @Test
     void askUsesMockFallbackWhenRagServiceReturnsEmptyBody() {
-        RagClient client = new RagClient("http://rag-service", 100, 100, true, new ObjectMapper());
+        RagClient client = new RagClient("http://rag-service", 100, 100, true, "rag-token", new ObjectMapper());
         RestTemplate restTemplate = (RestTemplate) ReflectionTestUtils.getField(client, "restTemplate");
         MockRestServiceServer server = MockRestServiceServer.bindTo(restTemplate).build();
         server.expect(requestTo("http://rag-service/rag/ask"))
                 .andExpect(method(POST))
+                .andExpect(header("X-KnowFlow-Rag-Token", "rag-token"))
                 .andRespond(withSuccess("", MediaType.APPLICATION_JSON));
 
         RagResponse response = client.ask(11L, "介绍一下知识库", 5);
@@ -39,7 +41,7 @@ class RagClientTest {
 
     @Test
     void askFailsWhenRagServiceReturnsEmptyBodyAndFallbackIsDisabled() {
-        RagClient client = new RagClient("http://rag-service", 100, 100, false, new ObjectMapper());
+        RagClient client = new RagClient("http://rag-service", 100, 100, false, "rag-token", new ObjectMapper());
         RestTemplate restTemplate = (RestTemplate) ReflectionTestUtils.getField(client, "restTemplate");
         MockRestServiceServer server = MockRestServiceServer.bindTo(restTemplate).build();
         server.expect(requestTo("http://rag-service/rag/ask"))
@@ -54,7 +56,7 @@ class RagClientTest {
 
     @Test
     void askUsesMockFallbackWhenRagServiceReturnsServerError() {
-        RagClient client = new RagClient("http://rag-service", 100, 100, true, new ObjectMapper());
+        RagClient client = new RagClient("http://rag-service", 100, 100, true, "rag-token", new ObjectMapper());
         RestTemplate restTemplate = (RestTemplate) ReflectionTestUtils.getField(client, "restTemplate");
         MockRestServiceServer server = MockRestServiceServer.bindTo(restTemplate).build();
         server.expect(requestTo("http://rag-service/rag/ask"))
