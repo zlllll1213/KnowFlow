@@ -11,5 +11,5 @@ docker compose up -d
 echo
 echo "Infrastructure is ready:"
 echo "- PostgreSQL: localhost:5432"
-echo "- Redis:      localhost:6379"
+echo "- Redis:      localhost:6379 (password from REDIS_PASSWORD)"
 echo "- MinIO:      http://localhost:9001"

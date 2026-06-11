@@ -56,20 +56,33 @@ suffix="$(date +%s)"
 username="smoke_$suffix"
 password="Smoke123456"
 email="$username@example.com"
+cookie_jar="$(mktemp /tmp/knowflow-cookies-XXXXXX.txt)"
+trap 'rm -f "$cookie_jar"' EXIT
+
+refresh_csrf() {
+  curl -fsS -c "$cookie_jar" -b "$cookie_jar" "$BACKEND_URL/api/auth/csrf" >/dev/null
+  awk '$6 == "XSRF-TOKEN" { token = $7 } END { print token }' "$cookie_jar"
+}
+
+csrf_token="$(refresh_csrf)"
 
 echo "Registering $username..."
 curl -fsS -X POST "$BACKEND_URL/api/auth/register" \
+  -b "$cookie_jar" -c "$cookie_jar" \
   -H "Content-Type: application/json" \
+  -H "X-XSRF-TOKEN: $csrf_token" \
   -d "{\"username\":\"$username\",\"password\":\"$password\",\"email\":\"$email\"}" >/dev/null
 
 login_json="$(curl -fsS -X POST "$BACKEND_URL/api/auth/login" \
+  -b "$cookie_jar" -c "$cookie_jar" \
   -H "Content-Type: application/json" \
+  -H "X-XSRF-TOKEN: $csrf_token" \
   -d "{\"username\":\"$username\",\"password\":\"$password\"}")"
-token="$(json_get "$login_json" "data.token")"
 
 kb_json="$(curl -fsS -X POST "$BACKEND_URL/api/kb" \
+  -b "$cookie_jar" -c "$cookie_jar" \
   -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $token" \
+  -H "X-XSRF-TOKEN: $csrf_token" \
   -d "{\"name\":\"Smoke KB $suffix\",\"description\":\"End-to-end smoke test\"}")"
 kb_id="$(json_get "$kb_json" "data.id")"
 echo "Created knowledge base: $kb_id"
@@ -83,7 +96,8 @@ KnowFlow 是一个智能知识库问答平台。
 EOF
 
 doc_json="$(curl -fsS -X POST "$BACKEND_URL/api/document/upload" \
-  -H "Authorization: Bearer $token" \
+  -b "$cookie_jar" -c "$cookie_jar" \
+  -H "X-XSRF-TOKEN: $csrf_token" \
   -F "kbId=$kb_id" \
   -F "file=@$tmpfile;filename=smoke.txt")"
 doc_id="$(json_get "$doc_json" "data.id")"
@@ -93,7 +107,7 @@ deadline=$((SECONDS + TIMEOUT_SECONDS))
 status="UNKNOWN"
 while (( SECONDS < deadline )); do
   status_json="$(curl -fsS "$BACKEND_URL/api/document/$doc_id/status" \
-    -H "Authorization: Bearer $token")"
+    -b "$cookie_jar" -c "$cookie_jar")"
   status="$(json_get "$status_json" "data")"
   echo "Document status: $status"
 
@@ -113,17 +127,19 @@ if [[ "$status" != "DONE" ]]; then
 fi
 
 session_json="$(curl -fsS -X POST "$BACKEND_URL/api/chat/session" \
+  -b "$cookie_jar" -c "$cookie_jar" \
   -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $token" \
+  -H "X-XSRF-TOKEN: $csrf_token" \
   -d "{\"kbId\":$kb_id,\"title\":\"Smoke Chat\"}")"
 session_id="$(json_get "$session_json" "data.id")"
 echo "Created chat session: $session_id"
 
 stream_file="$(mktemp /tmp/knowflow-stream-XXXXXX.txt)"
-trap 'rm -f "$tmpfile" "$stream_file"' EXIT
+trap 'rm -f "$cookie_jar" "$tmpfile" "$stream_file"' EXIT
 curl -fsS -N --max-time 30 -X POST "$BACKEND_URL/api/chat/ask/stream" \
+  -b "$cookie_jar" -c "$cookie_jar" \
   -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $token" \
+  -H "X-XSRF-TOKEN: $csrf_token" \
   -d "{\"kbId\":$kb_id,\"sessionId\":$session_id,\"question\":\"$QUESTION\"}" \
   > "$stream_file"
 
@@ -207,17 +223,19 @@ echo "RAG stream assertions passed."
 echo "Testing Agent stream..."
 
 agent_session_json="$(curl -fsS -X POST "$BACKEND_URL/api/chat/session" \
+  -b "$cookie_jar" -c "$cookie_jar" \
   -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $token" \
+  -H "X-XSRF-TOKEN: $csrf_token" \
   -d "{\"kbId\":$kb_id,\"title\":\"Agent Smoke Chat\"}")"
 agent_session_id="$(json_get "$agent_session_json" "data.id")"
 echo "Created agent session: $agent_session_id"
 
 agent_stream_file="$(mktemp /tmp/knowflow-agent-stream-XXXXXX.txt)"
-trap 'rm -f "$tmpfile" "$stream_file" "$agent_stream_file"' EXIT
+trap 'rm -f "$cookie_jar" "$tmpfile" "$stream_file" "$agent_stream_file"' EXIT
 curl -fsS -N --max-time 30 -X POST "$BACKEND_URL/api/agent/ask/stream" \
+  -b "$cookie_jar" -c "$cookie_jar" \
   -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $token" \
+  -H "X-XSRF-TOKEN: $csrf_token" \
   -d "{\"kbId\":$kb_id,\"sessionId\":$agent_session_id,\"question\":\"$QUESTION\"}" \
   > "$agent_stream_file"
 
