@@ -36,3 +36,8 @@ logs/
 # Optimization / review logs (local only)
 20??-??-??_????/
 .reasonix/
+reasonix.toml
+
+# Local agent/tooling state
+.codegraph/
+docs/superpowers/
