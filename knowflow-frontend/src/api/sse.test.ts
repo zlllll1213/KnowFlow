@@ -4,20 +4,6 @@ import type { AgentResponse, ChatAskRequest, RagSourceChunk } from '@/types/chat
 
 const encoder = new TextEncoder()
 
-function installLocalStorage(token: string | null = null) {
-  const store: Record<string, string> = {}
-  if (token) store.knowflow_token = token
-  vi.stubGlobal('localStorage', {
-    getItem: vi.fn((key: string) => store[key] ?? null),
-    setItem: vi.fn((key: string, value: string) => {
-      store[key] = value
-    }),
-    removeItem: vi.fn((key: string) => {
-      delete store[key]
-    }),
-  })
-}
-
 function mockFetchWithChunks(chunks: string[], status = 200) {
   const stream = new ReadableStream<Uint8Array>({
     start(controller) {
@@ -62,7 +48,7 @@ describe('streamRequest', () => {
   beforeEach(() => {
     vi.restoreAllMocks()
     vi.unstubAllGlobals()
-    installLocalStorage('test-token')
+    vi.stubGlobal('document', { cookie: 'XSRF-TOKEN=csrf-token' })
   })
 
   it('streams token, meta, sources and done events across chunk boundaries', async () => {
@@ -109,9 +95,10 @@ describe('streamRequest', () => {
       method: 'POST',
       headers: expect.objectContaining({
         'Content-Type': 'application/json',
-        Authorization: 'Bearer test-token',
+        'X-XSRF-TOKEN': 'csrf-token',
       }),
       body: JSON.stringify(request),
+      credentials: 'include',
     }))
   })
 

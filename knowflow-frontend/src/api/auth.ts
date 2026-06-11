@@ -12,3 +12,7 @@ export function register(data: RegisterRequest): Promise<UserVO> {
 export function fetchMe(): Promise<UserVO> {
   return request.get('/api/auth/me')
 }
+
+export function logout(): Promise<void> {
+  return request.post('/api/auth/logout')
+}
