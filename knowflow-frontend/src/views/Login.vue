@@ -1,172 +1,78 @@
 <template>
-  <div class="auth-page" :class="`mascot-${mascotMode}`">
-    <section class="visual-panel">
-      <div class="glow glow-lavender"></div>
-      <div class="glow glow-sun"></div>
-      <div class="hero-shell">
-        <div class="hero-badge">智能知识库平台</div>
+  <div class="auth-page">
+    <header class="auth-mobile-brand">
+      <span class="brand-mark" aria-hidden="true"><span></span></span>
+      <strong>KnowFlow <em>Agent</em></strong>
+    </header>
 
-        <div class="illustration-stage" aria-hidden="true">
-          <div class="blob blob-main"></div>
-          <div class="blob blob-warm"></div>
-          <div class="orb-card card-rag">RAG</div>
-          <div class="orb-card card-ai">AI</div>
-          <div class="sparkle sparkle-one"></div>
-          <div class="sparkle sparkle-two"></div>
+    <section class="auth-story">
+      <div class="brand-row desktop-only">
+        <span class="brand-mark" aria-hidden="true"><span></span></span>
+        <strong>KnowFlow <em>Agent</em></strong>
+      </div>
 
-          <svg class="login-mascot" viewBox="0 0 260 230" role="img" aria-label="KnowFlow 登录助手">
-            <defs>
-              <linearGradient id="buddyBody" x1="58" y1="42" x2="198" y2="185" gradientUnits="userSpaceOnUse">
-                <stop offset="0" stop-color="#F7FDFF" />
-                <stop offset=".46" stop-color="#CFFAE9" />
-                <stop offset="1" stop-color="#BFD7FF" />
-              </linearGradient>
-              <linearGradient id="buddyEar" x1="0" y1="0" x2="1" y2="1">
-                <stop offset="0" stop-color="#B78CFF" />
-                <stop offset="1" stop-color="#6D5DFB" />
-              </linearGradient>
-              <linearGradient id="buddyPaw" x1="0" y1="0" x2="1" y2="1">
-                <stop offset="0" stop-color="#A78BFA" />
-                <stop offset="1" stop-color="#60A5FA" />
-              </linearGradient>
-              <radialGradient id="buddyGlow" cx=".34" cy=".2" r=".72">
-                <stop offset="0" stop-color="#FFFFFF" stop-opacity=".96" />
-                <stop offset=".55" stop-color="#FFFFFF" stop-opacity=".18" />
-                <stop offset="1" stop-color="#FFFFFF" stop-opacity="0" />
-              </radialGradient>
-              <filter id="buddyShadow" x="-30%" y="-25%" width="160%" height="160%">
-                <feDropShadow dx="0" dy="18" stdDeviation="16" flood-color="#6D28D9" flood-opacity=".22" />
-              </filter>
-            </defs>
+      <div class="hero-copy">
+        <h1>从文档到可信回答</h1>
+        <p>KnowFlow 将上传文档解析为可检索知识库，回答会带上来源片段和 Agent 执行轨迹。</p>
+      </div>
 
-            <ellipse class="mascot-ground" cx="130" cy="206" rx="72" ry="14" />
-            <g class="mascot-buddy" filter="url(#buddyShadow)">
-              <path class="mascot-antenna-line" d="M130 48 C126 34 130 24 139 15" />
-              <circle class="mascot-antenna-dot" cx="142" cy="12" r="9" />
-
-              <g class="mascot-ear ear-left">
-                <rect x="42" y="82" width="38" height="56" rx="19" />
-                <circle cx="60" cy="110" r="7" />
-              </g>
-              <g class="mascot-ear ear-right">
-                <rect x="180" y="82" width="38" height="56" rx="19" />
-                <circle cx="199" cy="110" r="7" />
-              </g>
-
-              <path
-                class="mascot-body"
-                d="M62 115 C62 70 90 48 130 48 C170 48 198 70 198 115 C198 162 171 185 130 185 C89 185 62 162 62 115Z"
-              />
-              <path class="mascot-gloss" d="M84 74 C102 54 143 57 157 73 C138 66 112 66 84 74Z" />
-              <ellipse class="mascot-face" cx="130" cy="124" rx="58" ry="48" />
-              <ellipse class="mascot-blush blush-left" cx="88" cy="139" rx="13" ry="7" />
-              <ellipse class="mascot-blush blush-right" cx="172" cy="139" rx="13" ry="7" />
-
-              <g class="mascot-eye eye-left">
-                <ellipse class="eye-white" cx="106" cy="114" rx="18" ry="21" />
-                <circle class="eye-pupil" cx="108" cy="116" r="8" />
-                <circle class="eye-highlight" cx="104" cy="110" r="3" />
-              </g>
-              <g class="mascot-eye eye-right">
-                <ellipse class="eye-white" cx="154" cy="114" rx="18" ry="21" />
-                <circle class="eye-pupil" cx="156" cy="116" r="8" />
-                <circle class="eye-highlight" cx="152" cy="110" r="3" />
-              </g>
-              <path class="mascot-smile" d="M116 146 C122 154 138 154 144 146" />
-
-              <g class="mascot-paw paw-left">
-                <rect x="58" y="150" width="48" height="44" rx="18" />
-                <path d="M72 160 L72 181" />
-                <path d="M84 158 L84 181" />
-                <path d="M96 163 L96 181" />
-              </g>
-              <g class="mascot-paw paw-right">
-                <rect x="154" y="150" width="48" height="44" rx="18" />
-                <path d="M166 163 L166 181" />
-                <path d="M178 158 L178 181" />
-                <path d="M190 160 L190 181" />
-              </g>
-
-            </g>
-          </svg>
+      <div class="flow-board">
+        <div v-for="step in flowSteps" :key="step.no" class="flow-card">
+          <span class="step-index">{{ step.no }}</span>
+          <el-icon><component :is="step.icon" /></el-icon>
+          <div>
+            <strong>{{ step.title }}</strong>
+            <small>{{ step.caption }}</small>
+          </div>
         </div>
+      </div>
 
-        <div class="hero-copy">
-          <h1>让知识触手可及</h1>
-          <p>KnowFlow 将文档转化为可对话的智能知识库，让检索、阅读与协作变得轻盈。</p>
-        </div>
-
-        <div class="hero-features">
-          <div class="feature-item"><el-icon><Check /></el-icon> RAG 增强检索</div>
-          <div class="feature-item"><el-icon><Check /></el-icon> 多格式文档解析</div>
-          <div class="feature-item"><el-icon><Check /></el-icon> 实时向量化索引</div>
-        </div>
+      <div class="tech-row">
+        <span>RAG</span>
+        <span>pgvector</span>
+        <span>SSE</span>
+        <span>Citation Guard</span>
       </div>
     </section>
 
-    <section class="form-panel">
+    <section class="auth-form">
       <div class="auth-card">
         <div class="card-brand">
-          <span class="brand-icon">K</span>
-          <span class="brand-name">KnowFlow</span>
+          <span class="brand-mark small" aria-hidden="true"><span></span></span>
+          <strong>KnowFlow <em>Agent</em></strong>
         </div>
-        <h2 class="card-title">欢迎回来</h2>
-        <p class="card-subtitle">登录您的账户，继续构建知识流</p>
+        <h2>欢迎回来</h2>
+        <p>登录后继续上传、检索和核对引用来源。</p>
 
-        <el-form
-          ref="formRef"
-          :model="form"
-          :rules="rules"
-          @submit.prevent="handleLogin"
-          @focusout="resetMascotModeSoon"
-        >
-          <div
-            class="mascot-field username-field"
-            @focusin="setMascotMode('peek')"
-            @pointerdown="setMascotMode('peek')"
-          >
-            <el-form-item prop="username">
-              <el-input
-                v-model="form.username"
-                placeholder="用户名"
-                size="large"
-                prefix-icon="User"
-              />
-            </el-form-item>
-          </div>
-
-          <div
-            class="mascot-field password-field"
-            @focusin="setMascotMode('cover')"
-            @pointerdown="setMascotMode('cover')"
-          >
-            <el-form-item prop="password">
-              <el-input
-                v-model="form.password"
-                type="password"
-                placeholder="密码"
-                size="large"
-                prefix-icon="Lock"
-                show-password
-                @keyup.enter="handleLogin"
-              />
-            </el-form-item>
-          </div>
-
-          <el-button
-            type="primary"
-            size="large"
-            class="submit-btn"
-            :loading="loading"
-            @click="handleLogin"
-          >
-            登录
+        <el-form ref="formRef" :model="form" :rules="rules" label-position="top" @submit.prevent="handleLogin">
+          <el-form-item label="用户名" prop="username">
+            <el-input v-model="form.username" placeholder="请输入用户名" size="large" prefix-icon="User" />
+          </el-form-item>
+          <el-form-item label="密码" prop="password">
+            <el-input
+              v-model="form.password"
+              type="password"
+              placeholder="请输入密码"
+              size="large"
+              prefix-icon="Lock"
+              show-password
+              @keyup.enter="handleLogin"
+            />
+          </el-form-item>
+          <el-button type="primary" size="large" class="submit-btn" :loading="loading" @click="handleLogin">
+            登录工作台
           </el-button>
         </el-form>
 
         <div class="card-footer">
           还没有账户？<router-link to="/register">立即注册</router-link>
         </div>
+      </div>
+
+      <div class="security-row">
+        <span><el-icon><Lock /></el-icon> JWT 访问控制</span>
+        <span>数据加密存储</span>
+        <span>引用可追溯</span>
       </div>
     </section>
   </div>
@@ -184,28 +90,19 @@ const route = useRoute()
 const authStore = useAuthStore()
 const loading = ref(false)
 const formRef = ref<FormInstance>()
-const mascotMode = ref<'idle' | 'peek' | 'cover'>('idle')
-let mascotResetTimer: ReturnType<typeof window.setTimeout> | undefined
+
+const flowSteps = [
+  { no: '01', title: '上传文档', caption: 'PDF、Word、Markdown', icon: 'UploadFilled' },
+  { no: '02', title: '解析切片', caption: '抽取文本并生成 chunk', icon: 'DocumentChecked' },
+  { no: '03', title: '向量检索', caption: '在知识库中召回依据', icon: 'Share' },
+  { no: '04', title: 'Agent 回答', caption: '按意图生成结果', icon: 'ChatDotRound' },
+  { no: '05', title: '来源校验', caption: '展示 sources 与 trace', icon: 'Finished' },
+]
 
 const form = reactive({ username: '', password: '' })
 const rules: FormRules = {
   username: [{ required: true, message: '请输入用户名', trigger: 'blur' }],
   password: [{ required: true, message: '请输入密码', trigger: 'blur' }],
-}
-
-function setMascotMode(mode: 'idle' | 'peek' | 'cover') {
-  if (mascotResetTimer) window.clearTimeout(mascotResetTimer)
-  mascotMode.value = mode
-}
-
-function resetMascotModeSoon() {
-  if (mascotResetTimer) window.clearTimeout(mascotResetTimer)
-  mascotResetTimer = window.setTimeout(() => {
-    const activeElement = document.activeElement
-    if (!(activeElement instanceof HTMLElement) || !activeElement.closest('.mascot-field')) {
-      mascotMode.value = 'idle'
-    }
-  }, 0)
 }
 
 async function handleLogin() {
@@ -225,714 +122,430 @@ async function handleLogin() {
 
 <style scoped>
 .auth-page {
+  min-height: 100vh;
   display: grid;
-  min-height: 100vh;
-  grid-template-columns: minmax(0, 1.15fr) minmax(420px, .85fr);
+  grid-template-columns: minmax(0, 1fr) minmax(420px, 520px);
   overflow: hidden;
-  background: #fff8f1;
+  background: #eef5ff;
 }
 
-.visual-panel {
+.auth-mobile-brand {
+  display: none;
+}
+
+.auth-story {
   position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: center;
   min-height: 100vh;
-  padding: 56px;
+  padding: 52px clamp(36px, 5vw, 72px);
   overflow: hidden;
+  color: #fff;
   background:
-    linear-gradient(135deg, rgba(255, 247, 237, .96), rgba(238, 242, 255, .94) 46%, rgba(250, 245, 255, .98)),
-    radial-gradient(circle at 18% 18%, rgba(251, 191, 36, .18), transparent 32%),
-    radial-gradient(circle at 82% 22%, rgba(124, 58, 237, .16), transparent 34%);
+    radial-gradient(circle at 80% 18%, rgba(33, 103, 216, .36), transparent 30%),
+    radial-gradient(circle at 36% 88%, rgba(37, 211, 255, .18), transparent 34%),
+    linear-gradient(145deg, #030712 0%, #061733 48%, #08285c 100%);
 }
 
-.visual-panel::before {
+.auth-story::before,
+.auth-story::after {
   content: '';
   position: absolute;
-  inset: 28px;
-  border: 1px solid rgba(255, 255, 255, .62);
-  border-radius: 36px;
   pointer-events: none;
 }
 
-.glow {
-  position: absolute;
-  border-radius: 50%;
-  filter: blur(22px);
-  opacity: .7;
-  animation: glow-drift 9s ease-in-out infinite alternate;
+.auth-story::before {
+  inset: 0;
+  background:
+    linear-gradient(90deg, rgba(139, 180, 255, .08) 1px, transparent 1px),
+    linear-gradient(180deg, rgba(139, 180, 255, .06) 1px, transparent 1px);
+  background-size: 48px 48px;
+  mask-image: linear-gradient(180deg, rgba(0,0,0,.78), transparent 88%);
 }
 
-.glow-lavender {
-  width: 260px;
-  height: 260px;
-  left: 9%;
-  top: 12%;
-  background: rgba(167, 139, 250, .38);
+.auth-story::after {
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 30%;
+  background:
+    radial-gradient(ellipse at 50% 100%, rgba(47, 114, 255, .34), transparent 62%),
+    repeating-linear-gradient(5deg, rgba(49, 199, 255, .16) 0 1px, transparent 1px 18px);
+  opacity: .58;
 }
 
-.glow-sun {
-  width: 220px;
-  height: 220px;
-  right: 10%;
-  bottom: 14%;
-  background: rgba(251, 146, 60, .28);
-  animation-delay: -2s;
-}
-
-.hero-shell {
+.brand-row,
+.card-brand,
+.auth-mobile-brand {
   position: relative;
   z-index: 1;
-  width: min(520px, 100%);
-  animation: panel-enter .7s ease both;
-}
-
-.hero-badge {
-  display: inline-flex;
   align-items: center;
-  height: 34px;
-  padding: 0 16px;
-  margin-bottom: 24px;
-  border: 1px solid rgba(124, 58, 237, .18);
-  border-radius: 999px;
-  background: rgba(255, 255, 255, .58);
-  color: #6d28d9;
-  font-size: 13px;
-  font-weight: 700;
-  box-shadow: 0 12px 30px rgba(124, 58, 237, .1);
-  backdrop-filter: blur(14px);
-}
-
-.illustration-stage {
-  position: relative;
-  width: min(420px, 88vw);
-  aspect-ratio: 1.18;
-  margin: 0 0 28px;
-  display: grid;
-  place-items: center;
-}
-
-.blob {
-  position: absolute;
-  border-radius: 45% 55% 58% 42% / 48% 44% 56% 52%;
-  transform-origin: center;
-}
-
-.blob-main {
-  width: 78%;
-  height: 76%;
-  background:
-    radial-gradient(circle at 32% 28%, rgba(255, 255, 255, .9), transparent 18%),
-    linear-gradient(135deg, #c4b5fd 0%, #f9a8d4 48%, #fbbf24 100%);
-  box-shadow:
-    0 40px 90px rgba(124, 58, 237, .25),
-    inset 0 0 0 1px rgba(255, 255, 255, .5);
-  animation: blob-breathe 6s ease-in-out infinite;
-}
-
-.blob-warm {
-  width: 44%;
-  height: 40%;
-  right: 4%;
-  bottom: 8%;
-  background: linear-gradient(135deg, #fed7aa, #fde68a);
-  opacity: .86;
-  animation: blob-float 7s ease-in-out infinite;
-}
-
-.orb-card {
-  position: absolute;
-  display: grid;
-  place-items: center;
-  width: 62px;
-  height: 62px;
-  border-radius: 22px;
-  background: rgba(255, 255, 255, .74);
-  color: #4c1d95;
-  font-family: var(--font-heading);
-  font-size: 17px;
-  font-weight: 800;
-  box-shadow: 0 18px 40px rgba(88, 28, 135, .14);
-  backdrop-filter: blur(14px);
-  animation: soft-float 4.8s ease-in-out infinite;
-}
-
-.card-rag {
-  left: 3%;
-  top: 34%;
-}
-
-.card-ai {
-  right: 4%;
-  top: 18%;
-  color: #c2410c;
-  animation-delay: -1.4s;
-}
-
-.sparkle {
-  position: absolute;
-  width: 14px;
-  height: 14px;
-  border-radius: 5px;
-  background: #facc15;
-  transform: rotate(45deg);
-  animation: sparkle-pulse 2.6s ease-in-out infinite;
-}
-
-.sparkle-one {
-  left: 22%;
-  top: 14%;
-}
-
-.sparkle-two {
-  right: 18%;
-  bottom: 22%;
-  width: 10px;
-  height: 10px;
-  background: #a78bfa;
-  animation-delay: -.8s;
-}
-
-.login-mascot {
-  position: relative;
-  z-index: 2;
-  width: 238px;
-  height: auto;
-  overflow: visible;
-  animation: mascot-float 4.8s ease-in-out infinite;
-}
-
-.mascot-ground {
-  fill: rgba(76, 29, 149, .14);
-  filter: blur(2px);
-}
-
-.mascot-buddy,
-.mascot-antenna-line,
-.mascot-ear,
-.mascot-eye,
-.eye-pupil,
-.mascot-smile,
-.mascot-paw {
-  transform-box: fill-box;
-  transform-origin: center;
-}
-
-.mascot-antenna-line {
-  fill: none;
-  stroke: #67e8f9;
-  stroke-width: 5;
-  stroke-linecap: round;
-  transition: transform .3s ease;
-}
-
-.mascot-antenna-dot {
-  fill: #fde68a;
-  stroke: rgba(255, 255, 255, .85);
-  stroke-width: 4;
-}
-
-.mascot-body {
-  fill: url(#buddyBody);
-  stroke: rgba(255, 255, 255, .86);
-  stroke-width: 3;
-}
-
-.mascot-gloss {
-  fill: url(#buddyGlow);
-}
-
-.mascot-ear rect {
-  fill: url(#buddyEar);
-  stroke: rgba(255, 255, 255, .8);
-  stroke-width: 3;
-}
-
-.mascot-ear circle {
-  fill: rgba(255, 255, 255, .34);
-}
-
-.ear-left {
-  transform: rotate(-7deg);
-}
-
-.ear-right {
-  transform: rotate(7deg);
-}
-
-.mascot-face {
-  fill: rgba(255, 255, 255, .9);
-}
-
-.eye-white {
-  fill: #fff;
-  stroke: rgba(76, 29, 149, .1);
-  stroke-width: 2;
-}
-
-.eye-pupil {
-  fill: #20134a;
-  transition: transform .26s ease;
-}
-
-.eye-highlight {
-  fill: #fff;
-  transition: transform .26s ease;
-}
-
-.mascot-eye {
-  animation: blink 5.4s infinite;
-}
-
-.mascot-blush {
-  fill: rgba(244, 114, 182, .42);
-  transition: opacity .24s ease, transform .24s ease;
-}
-
-.mascot-smile {
-  fill: none;
-  stroke: #2e2550;
-  stroke-width: 4;
-  stroke-linecap: round;
-  transition: transform .24s ease, stroke-width .24s ease;
-}
-
-.mascot-paw {
-  transition: transform .34s cubic-bezier(.2, .9, .28, 1.18);
-}
-
-.mascot-paw rect {
-  fill: url(#buddyPaw);
-  stroke: rgba(255, 255, 255, .82);
-  stroke-width: 3;
-}
-
-.mascot-paw path {
-  fill: none;
-  stroke: rgba(255, 255, 255, .7);
-  stroke-width: 5;
-  stroke-linecap: round;
-}
-
-.paw-left {
-  transform: rotate(-11deg) translate(-8px, 4px);
-}
-
-.paw-right {
-  transform: rotate(11deg) translate(8px, 4px);
-}
-
-.auth-page.mascot-peek .login-mascot .mascot-antenna-line,
-.auth-page:has(.username-field:focus-within) .login-mascot .mascot-antenna-line {
-  transform: rotate(8deg);
-}
-
-.auth-page.mascot-peek .login-mascot .eye-pupil,
-.auth-page.mascot-peek .login-mascot .eye-highlight,
-.auth-page:has(.username-field:focus-within) .login-mascot .eye-pupil,
-.auth-page:has(.username-field:focus-within) .login-mascot .eye-highlight {
-  transform: translateX(7px);
-}
-
-.auth-page.mascot-peek .login-mascot .paw-right,
-.auth-page:has(.username-field:focus-within) .login-mascot .paw-right {
-  transform: rotate(-8deg) translate(-20px, -17px);
-}
-
-.auth-page.mascot-peek .login-mascot .paw-left,
-.auth-page:has(.username-field:focus-within) .login-mascot .paw-left {
-  transform: rotate(-14deg) translate(-18px, 8px);
-}
-
-.auth-page.mascot-peek .login-mascot .mascot-smile,
-.auth-page:has(.username-field:focus-within) .login-mascot .mascot-smile {
-  transform: translateY(2px) scaleX(1.12);
-}
-
-.auth-page.mascot-cover .login-mascot .mascot-antenna-line,
-.auth-page:has(.password-field:focus-within) .login-mascot .mascot-antenna-line {
-  transform: rotate(-12deg);
-}
-
-.auth-page.mascot-cover .login-mascot .mascot-eye,
-.auth-page:has(.password-field:focus-within) .login-mascot .mascot-eye {
-  animation: none;
-}
-
-.auth-page.mascot-cover .login-mascot .eye-pupil,
-.auth-page.mascot-cover .login-mascot .eye-highlight,
-.auth-page:has(.password-field:focus-within) .login-mascot .eye-pupil,
-.auth-page:has(.password-field:focus-within) .login-mascot .eye-highlight {
-  transform: translateX(5px);
-}
-
-.auth-page.mascot-cover .login-mascot .paw-left,
-.auth-page:has(.password-field:focus-within) .login-mascot .paw-left {
-  transform: rotate(7deg) translate(30px, -48px);
-}
-
-.auth-page.mascot-cover .login-mascot .paw-right,
-.auth-page:has(.password-field:focus-within) .login-mascot .paw-right {
-  animation: shy-right-peek 3.2s ease-in-out infinite;
-  transform: rotate(-7deg) translate(-30px, -48px);
-}
-
-.auth-page.mascot-cover .login-mascot .mascot-smile,
-.auth-page:has(.password-field:focus-within) .login-mascot .mascot-smile {
-  transform: translateY(8px) scaleX(.72);
-  stroke-width: 3;
-}
-
-.auth-page.mascot-cover .login-mascot .mascot-blush,
-.auth-page:has(.password-field:focus-within) .login-mascot .mascot-blush {
-  opacity: .72;
-  transform: translateY(3px);
-}
-
-.auth-page.mascot-cover .login-mascot .eye-right,
-.auth-page:has(.password-field:focus-within) .login-mascot .eye-right {
-  animation: shy-real-eye-peek 3.2s ease-in-out infinite;
-}
-
-.hero-copy h1 {
-  max-width: 460px;
-  margin: 0 0 16px;
-  color: #2e1065;
-  font-family: var(--font-heading);
-  font-size: clamp(36px, 5vw, 58px);
-  font-weight: 800;
-  line-height: 1.04;
-  letter-spacing: 0;
-}
-
-.hero-copy p {
-  max-width: 430px;
-  margin: 0 0 28px;
-  color: #6b5b7f;
-  font-size: 16px;
-  line-height: 1.8;
-}
-
-.hero-features {
-  display: flex;
-  flex-wrap: wrap;
   gap: 12px;
 }
 
-.feature-item {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  height: 38px;
-  padding: 0 14px;
-  border: 1px solid rgba(124, 58, 237, .13);
-  border-radius: 999px;
-  background: rgba(255, 255, 255, .66);
-  color: #4c1d95;
-  font-size: 13px;
-  font-weight: 700;
-  box-shadow: 0 12px 30px rgba(124, 58, 237, .08);
-  backdrop-filter: blur(12px);
-}
-
-.feature-item .el-icon {
-  color: #f97316;
-  font-size: 14px;
-}
-
-.form-panel {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 100vh;
-  padding: 56px;
-  background:
-    radial-gradient(circle at 82% 18%, rgba(253, 230, 138, .22), transparent 30%),
-    linear-gradient(180deg, #fff 0%, #fffaf5 100%);
-}
-
-.auth-card {
-  width: min(100%, 430px);
-  padding: 38px;
-  border: 1px solid rgba(226, 232, 240, .78);
-  border-radius: 30px;
-  background: rgba(255, 255, 255, .82);
-  box-shadow: 0 28px 80px rgba(88, 28, 135, .12), 0 1px 0 rgba(255, 255, 255, .7) inset;
-  backdrop-filter: blur(18px);
-  animation: card-enter .72s .08s ease both;
-}
-
+.brand-row,
 .card-brand {
   display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 34px;
 }
 
-.brand-icon {
-  display: grid;
-  place-items: center;
-  width: 40px;
-  height: 40px;
-  border-radius: 14px;
-  background: linear-gradient(135deg, #7c3aed, #f97316);
-  color: #fff;
-  font-family: var(--font-heading);
-  font-size: 18px;
-  font-weight: 800;
-  box-shadow: 0 14px 28px rgba(124, 58, 237, .28);
+.desktop-only {
+  display: flex;
 }
 
-.brand-name {
-  color: #1f1633;
-  font-family: var(--font-heading);
+.brand-row strong,
+.card-brand strong,
+.auth-mobile-brand strong {
   font-size: 19px;
   font-weight: 800;
 }
 
-.card-title {
-  margin: 0 0 8px;
-  color: #1f1633;
-  font-family: var(--font-heading);
-  font-size: 30px;
-  font-weight: 800;
+.brand-row em,
+.card-brand em,
+.auth-mobile-brand em {
+  color: #7da7ff;
+  font-style: normal;
+}
+
+.brand-mark {
+  position: relative;
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  background: linear-gradient(135deg, #25d3ff, #315dff);
+  clip-path: polygon(50% 0, 93% 25%, 93% 75%, 50% 100%, 7% 75%, 7% 25%);
+  box-shadow: 0 0 24px rgba(49, 199, 255, .42);
+}
+
+.brand-mark span {
+  width: 16px;
+  height: 18px;
+  border: 4px solid rgba(255,255,255,.82);
+  border-top: 0;
+  border-radius: 0 0 11px 11px;
+  transform: translateY(2px);
+}
+
+.brand-mark.small {
+  width: 40px;
+  height: 40px;
+}
+
+.hero-copy {
+  position: relative;
+  z-index: 1;
+  max-width: 660px;
+  margin-top: clamp(68px, 10vh, 116px);
+}
+
+.hero-copy h1 {
+  max-width: 11ch;
+  color: #fff;
+  font-size: clamp(56px, 7.4vw, 92px);
+  line-height: .98;
+  font-weight: 900;
   letter-spacing: 0;
+  text-wrap: balance;
 }
 
-.card-subtitle {
-  margin: 0 0 30px;
-  color: #7b6f8d;
+.hero-copy p {
+  max-width: 60ch;
+  margin-top: 26px;
+  color: #d6e3f8;
+  font-size: 17px;
+  line-height: 1.72;
+  text-wrap: pretty;
+}
+
+.flow-board {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  max-width: 780px;
+  gap: 10px;
+  margin-top: 42px;
+}
+
+.flow-card {
+  display: grid;
+  grid-template-columns: 38px 32px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  min-height: 74px;
+  padding: 12px;
+  border: 1px solid rgba(138, 180, 255, .24);
+  border-radius: 8px;
+  background: rgba(3, 16, 39, .7);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.08);
+}
+
+.step-index {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 30px;
+  border-radius: 7px;
+  background: #1c4fbd;
+  color: #eaf2ff;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.flow-card .el-icon {
+  color: #5dd6ff;
+  font-size: 24px;
+}
+
+.flow-card strong {
+  display: block;
+  color: #f2f7ff;
   font-size: 14px;
+  font-weight: 800;
 }
 
-.mascot-field {
-  transition: transform .22s ease;
+.flow-card small {
+  display: block;
+  margin-top: 4px;
+  overflow: hidden;
+  color: #9fb4d5;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.mascot-field:focus-within {
-  transform: translateY(-1px);
+.tech-row {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 28px;
 }
 
-.auth-card :deep(.el-form-item) {
-  margin-bottom: 18px;
+.tech-row span {
+  padding: 9px 14px;
+  border: 1px solid rgba(138, 180, 255, .24);
+  border-radius: 8px;
+  background: rgba(3, 16, 39, .58);
+  color: #cfe0f8;
+  text-align: center;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.auth-form {
+  position: relative;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 44px;
+  background:
+    radial-gradient(circle at 100% 0, rgba(47, 114, 255, .1), transparent 38%),
+    linear-gradient(145deg, #f7fbff, #edf4ff);
+}
+
+.auth-card {
+  width: min(100%, 430px);
+  padding: 42px 38px 34px;
+  border: 1px solid rgba(123, 145, 180, .28);
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 28px 70px rgba(23, 49, 92, .13);
+}
+
+.card-brand {
+  justify-content: center;
+  color: #081a3d;
+}
+
+.auth-card h2 {
+  margin-top: 30px;
+  color: #0b1a3b;
+  text-align: center;
+  font-size: 28px;
+  font-weight: 900;
+  text-wrap: balance;
+}
+
+.auth-card p {
+  margin: 10px 0 28px;
+  color: #5f6f88;
+  text-align: center;
+  font-size: 15px;
+  line-height: 1.55;
+}
+
+.auth-card :deep(.el-form-item__label) {
+  color: #15233d !important;
+  font-weight: 800;
 }
 
 .auth-card :deep(.el-input__wrapper) {
-  min-height: 50px;
-  border-radius: 16px;
-  background: rgba(255, 255, 255, .92);
-  box-shadow: 0 0 0 1px rgba(226, 232, 240, .95) inset, 0 10px 28px rgba(88, 28, 135, .05);
-  transition: box-shadow .22s ease, transform .22s ease, background .22s ease;
+  height: 52px;
+  background: #fff !important;
+  box-shadow: 0 0 0 1px #d8e2f2 inset !important;
 }
 
+.auth-card :deep(.el-input__wrapper:hover),
 .auth-card :deep(.el-input__wrapper.is-focus) {
-  background: #fff;
-  box-shadow: 0 0 0 2px rgba(124, 58, 237, .22) inset, 0 16px 34px rgba(124, 58, 237, .12);
-  transform: translateY(-1px);
+  box-shadow: 0 0 0 1px #2f72ff inset, 0 0 0 4px rgba(47, 114, 255, .12) !important;
 }
 
 .auth-card :deep(.el-input__inner) {
-  color: #241b35;
-  font-weight: 600;
-}
-
-.auth-card :deep(.el-input__inner::placeholder) {
-  color: #a59bb4;
-  font-weight: 500;
+  color: #10203d !important;
 }
 
 .submit-btn {
   width: 100%;
-  height: 50px;
-  margin-top: 6px;
-  border: 0;
-  border-radius: 16px;
-  background: linear-gradient(135deg, #7c3aed 0%, #f97316 100%) !important;
-  color: #fff;
-  font-size: 15px;
-  font-weight: 800;
-  box-shadow: 0 18px 34px rgba(124, 58, 237, .22);
-  transition: transform .2s ease, box-shadow .2s ease, filter .2s ease;
-}
-
-.submit-btn:hover {
-  filter: saturate(1.06) brightness(1.02);
-  transform: translateY(-2px);
-  box-shadow: 0 24px 46px rgba(124, 58, 237, .28);
-}
-
-.submit-btn:active {
-  transform: translateY(0) scale(.99);
+  height: 54px;
+  margin-top: 8px;
+  border-radius: 8px;
+  font-size: 16px;
+  font-weight: 900;
+  box-shadow: 0 16px 34px rgba(47, 114, 255, .28);
 }
 
 .card-footer {
-  margin-top: 22px;
-  color: #7b6f8d;
-  font-size: 14px;
+  margin-top: 28px;
+  color: #667891;
   text-align: center;
 }
 
 .card-footer a {
-  color: #7c3aed;
+  color: #2f72ff;
   font-weight: 800;
   text-decoration: none;
-  transition: color .2s ease;
 }
 
 .card-footer a:hover {
-  color: #f97316;
+  text-decoration: underline;
 }
 
-@keyframes panel-enter {
-  from { opacity: 0; transform: translateY(18px) scale(.98); }
-  to { opacity: 1; transform: translateY(0) scale(1); }
+.security-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 18px;
+  margin-top: 34px;
+  color: #667891;
+  font-size: 13px;
 }
 
-@keyframes card-enter {
-  from { opacity: 0; transform: translateX(18px); }
-  to { opacity: 1; transform: translateX(0); }
+.security-row span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 
-@keyframes glow-drift {
-  from { transform: translate3d(-10px, 0, 0) scale(.96); }
-  to { transform: translate3d(18px, 16px, 0) scale(1.06); }
-}
-
-@keyframes blob-breathe {
-  0%, 100% { border-radius: 45% 55% 58% 42% / 48% 44% 56% 52%; transform: scale(1) rotate(0deg); }
-  50% { border-radius: 58% 42% 44% 56% / 44% 56% 44% 56%; transform: scale(1.035) rotate(3deg); }
-}
-
-@keyframes blob-float {
-  0%, 100% { transform: translateY(0) rotate(-6deg); }
-  50% { transform: translateY(-16px) rotate(5deg); }
-}
-
-@keyframes soft-float {
-  0%, 100% { transform: translateY(0) rotate(-4deg); }
-  50% { transform: translateY(-12px) rotate(4deg); }
-}
-
-@keyframes sparkle-pulse {
-  0%, 100% { opacity: .45; transform: rotate(45deg) scale(.82); }
-  50% { opacity: 1; transform: rotate(45deg) scale(1.18); }
-}
-
-@keyframes mascot-float {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-10px); }
-}
-
-@keyframes blink {
-  0%, 91%, 100% { transform: scaleY(1); }
-  94%, 96% { transform: scaleY(.12); }
-}
-
-@keyframes shy-right-peek {
-  0%, 39%, 70%, 100% { transform: rotate(-7deg) translate(-30px, -48px); }
-  48%, 58% { transform: rotate(-20deg) translate(28px, -42px); }
-}
-
-@keyframes shy-real-eye-peek {
-  0%, 39%, 70%, 100% { transform: translateX(0) scaleY(.82); }
-  48%, 58% { transform: translateX(7px) scaleY(1); }
-}
-
-@media (max-width: 980px) {
+@media (max-width: 1120px) {
   .auth-page {
+    min-height: 100vh;
     grid-template-columns: 1fr;
-    min-height: 100svh;
+    overflow-y: auto;
+    background:
+      radial-gradient(circle at 80% 0, rgba(47, 114, 255, .2), transparent 34%),
+      linear-gradient(145deg, #061733 0%, #edf4ff 58%);
   }
 
-  .visual-panel {
+  .auth-mobile-brand {
+    position: relative;
+    z-index: 2;
+    display: flex;
+    padding: 24px 24px 0;
+    color: #fff;
+  }
+
+  .auth-mobile-brand strong {
+    font-size: 18px;
+    font-weight: 900;
+  }
+
+  .desktop-only {
+    display: none;
+  }
+
+  .auth-form {
+    order: 1;
     min-height: auto;
-    padding: 34px 24px 30px;
+    padding: 28px 24px 24px;
   }
 
-  .visual-panel::before {
-    inset: 14px;
-    border-radius: 28px;
+  .auth-story {
+    order: 2;
+    min-height: auto;
+    padding: 28px 24px 38px;
   }
 
-  .hero-shell {
-    width: min(100%, 640px);
-  }
-
-  .illustration-stage {
-    width: min(340px, 82vw);
-    margin-bottom: 18px;
+  .hero-copy {
+    margin-top: 0;
   }
 
   .hero-copy h1 {
-    font-size: clamp(34px, 8vw, 48px);
+    max-width: 18ch;
+    font-size: 40px;
+    line-height: 1.08;
   }
 
   .hero-copy p {
-    margin-bottom: 20px;
+    max-width: 62ch;
+    margin-top: 16px;
+    font-size: 15px;
   }
 
-  .form-panel {
-    min-height: auto;
-    padding: 26px 20px 38px;
+  .flow-board {
+    max-width: none;
+    margin-top: 24px;
   }
 
   .auth-card {
-    padding: 30px 24px;
-    border-radius: 24px;
+    width: min(100%, 520px);
+    margin: 0 auto;
   }
 }
 
-@media (max-width: 520px) {
-  .visual-panel {
-    padding: 28px 18px 24px;
+@media (max-width: 720px) {
+  .auth-mobile-brand {
+    padding: 18px 16px 0;
   }
 
-  .hero-badge {
-    height: 30px;
-    margin-bottom: 14px;
-    font-size: 12px;
-  }
-
-  .illustration-stage {
-    width: min(270px, 88vw);
-  }
-
-  .login-mascot {
-    width: 138px;
-    height: 129px;
-  }
-
-  .orb-card {
-    width: 50px;
-    height: 50px;
-    border-radius: 18px;
-    font-size: 14px;
-  }
-
-  .hero-features {
-    gap: 8px;
-  }
-
-  .feature-item {
-    height: 34px;
-    padding: 0 12px;
-    font-size: 12px;
-  }
-
-  .form-panel {
-    padding: 22px 16px 34px;
+  .auth-form {
+    padding: 18px 16px;
   }
 
   .auth-card {
-    padding: 26px 20px;
+    padding: 28px 20px 24px;
   }
 
   .card-brand {
-    margin-bottom: 26px;
+    justify-content: flex-start;
   }
 
-  .card-title {
-    font-size: 27px;
+  .auth-card h2,
+  .auth-card p {
+    text-align: left;
+  }
+
+  .auth-card h2 {
+    margin-top: 24px;
+    font-size: 26px;
+  }
+
+  .flow-board {
+    grid-template-columns: 1fr;
+  }
+
+  .flow-card {
+    min-height: 64px;
+  }
+
+  .tech-row span {
+    flex: 1 1 calc(50% - 10px);
+  }
+
+  .security-row {
+    margin-top: 18px;
+    justify-content: flex-start;
   }
 }
 </style>

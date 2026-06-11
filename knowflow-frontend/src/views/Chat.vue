@@ -363,19 +363,29 @@ function resetEvidence() {
 </script>
 
 <style scoped>
-.chat-layout { display: flex; height: calc(100vh - 0px); margin: -32px -36px; overflow: hidden; }
+.chat-layout {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  height: 100vh;
+  margin: -28px;
+  overflow: hidden;
+  background: rgba(2, 8, 23, .24);
+}
 
 .chat-sidebar {
-  width: 240px; flex-shrink: 0; background: var(--color-surface);
+  width: 260px; flex-shrink: 0;
+  background: rgba(3, 17, 41, .82);
   border-right: 1px solid var(--color-border); display: flex; flex-direction: column; overflow: hidden;
+  backdrop-filter: blur(18px);
 }
 .sidebar-section { padding: 16px 14px; border-bottom: 1px solid var(--color-border); }
-.section-label { font-size: 11px; font-weight: 600; color: var(--color-text-muted); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 8px; display: block; }
+.section-label { font-size: 11px; font-weight: 800; color: var(--color-text-muted); text-transform: uppercase; letter-spacing: .04em; margin-bottom: 8px; display: block; }
 .sessions-section { flex: 1; display: flex; flex-direction: column; overflow: hidden; border-bottom: none; }
 .sessions-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
 .new-session-btn {
-  width: 22px; height: 22px; border-radius: 4px; border: 1px solid var(--color-border);
-  background: none; cursor: pointer; color: var(--color-text-secondary);
+  width: 26px; height: 26px; border-radius: 8px; border: 1px solid var(--color-border);
+  background: rgba(47, 114, 255, .12); cursor: pointer; color: #8db7ff;
   display: flex; align-items: center; justify-content: center; font-size: 12px;
 }
 .new-session-btn:hover:not(:disabled) { background: var(--color-accent-light); color: var(--color-accent); border-color: var(--color-accent); }
@@ -384,17 +394,21 @@ function resetEvidence() {
 .no-kb-tip, .no-sessions { font-size: 12px; color: var(--color-text-muted); padding: 20px 0; text-align: center; }
 .session-item {
   display: flex; align-items: flex-start; gap: 9px; padding: 9px 10px;
-  border-radius: var(--radius-sm); cursor: pointer; transition: background .15s;
+  border-radius: 8px; cursor: pointer; transition: background .15s, box-shadow .15s;
 }
-.session-item:hover { background: var(--color-bg); }
-.session-item.active { background: var(--color-accent-light); }
+.session-item:hover { background: rgba(47, 114, 255, .1); }
+.session-item.active { background: rgba(47, 114, 255, .18); box-shadow: inset 3px 0 0 #31c7ff; }
 .session-icon { font-size: 14px; color: var(--color-text-muted); margin-top: 2px; flex-shrink: 0; }
 .session-item.active .session-icon { color: var(--color-accent); }
 .session-title { font-size: 13px; font-weight: 500; color: var(--color-text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .session-time { font-size: 11px; color: var(--color-text-muted); margin-top: 2px; }
 
 .chat-main {
-  flex: 1; display: flex; flex-direction: column; background: var(--color-bg); overflow: hidden;
+  flex: 1; display: flex; flex-direction: column;
+  background:
+    radial-gradient(circle at 50% 0, rgba(47, 114, 255, .12), transparent 30%),
+    rgba(2, 13, 32, .52);
+  overflow: hidden;
 }
 .chat-welcome {
   flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
@@ -403,8 +417,8 @@ function resetEvidence() {
 .welcome-icon { font-size: 52px; color: var(--color-border); }
 .chat-welcome h3 { font-family: var(--font-heading); font-size: 20px; color: var(--color-text-secondary); }
 .chat-welcome p { font-size: 14px; }
-.chat-header { padding: 16px 24px 12px; border-bottom: 1px solid var(--color-border); background: var(--color-surface); display: flex; align-items: center; justify-content: space-between; gap: 16px; }
-.chat-title { font-family: var(--font-heading); font-size: 16px; font-weight: 600; }
+.chat-header { padding: 16px 24px 12px; border-bottom: 1px solid var(--color-border); background: rgba(7, 28, 62, .72); display: flex; align-items: center; justify-content: space-between; gap: 16px; backdrop-filter: blur(18px); }
+.chat-title { font-family: var(--font-heading); font-size: 16px; font-weight: 900; color: #f6f9ff; }
 .chat-subtitle { font-size: 12px; color: var(--color-text-muted); margin-top: 2px; }
 .messages-wrap { flex: 1; overflow-y: auto; padding: 20px 24px; display: flex; flex-direction: column; gap: 16px; }
 .messages-empty { text-align: center; color: var(--color-text-muted); font-size: 14px; padding: 40px 0; }
@@ -418,14 +432,16 @@ function resetEvidence() {
 @keyframes bounce { 0%, 80%, 100% { transform: scale(.6); opacity:.4; } 40% { transform: scale(1); opacity:1; } }
 .input-area {
   padding: 16px 24px 20px; border-top: 1px solid var(--color-border);
-  background: var(--color-surface); display: flex; gap: 10px; align-items: flex-end;
+  background: rgba(7, 28, 62, .78); display: flex; gap: 10px; align-items: flex-end;
+  backdrop-filter: blur(18px);
 }
 .input-area .el-textarea { flex: 1; }
 .send-btn { height: 72px; width: 52px; font-size: 18px; }
 
 .source-column {
-  width: 260px; flex-shrink: 0; background: var(--color-surface);
+  width: 320px; flex-shrink: 0; background: rgba(3, 17, 41, .82);
   border-left: 1px solid var(--color-border); overflow: hidden;
+  backdrop-filter: blur(18px);
 }
 .source-stack {
   height: 100%; display: grid; grid-template-rows: minmax(0, 1fr) minmax(220px, 42%);

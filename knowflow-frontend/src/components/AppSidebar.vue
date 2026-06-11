@@ -1,8 +1,10 @@
 <template>
   <nav class="sidebar">
     <div class="sidebar-logo">
-      <span class="logo-icon">K</span>
-      <span class="logo-text">KnowFlow</span>
+      <span class="logo-icon" aria-hidden="true">
+        <span></span>
+      </span>
+      <span class="logo-text">KnowFlow <em>Agent</em></span>
     </div>
     <ul class="nav-list">
       <li v-for="item in navItems" :key="item.path">
@@ -39,11 +41,11 @@ const router = useRouter()
 const authStore = useAuthStore()
 
 const navItems = [
-  { path: '/dashboard', label: '工作台', icon: 'Odometer' },
+  { path: '/dashboard', label: '工作台', icon: 'HomeFilled' },
   { path: '/kb', label: '知识库', icon: 'Collection' },
   { path: '/documents', label: '文档管理', icon: 'Document' },
-  { path: '/chat', label: '智能问答', icon: 'ChatDotRound' },
-  { path: '/settings', label: '系统设置', icon: 'Setting' },
+  { path: '/chat', label: '对话 / Chat', icon: 'ChatDotRound' },
+  { path: '/settings', label: '设置', icon: 'Setting' },
 ]
 
 const initial = computed(() => (authStore.userInfo?.username?.[0] ?? 'U').toUpperCase())
@@ -60,42 +62,66 @@ function handleLogout() {
 
 <style scoped>
 .sidebar {
-  width: 220px; min-width: 220px; background: var(--color-sidebar);
+  width: 220px; min-width: 220px;
+  background:
+    radial-gradient(circle at 15% 8%, rgba(47, 114, 255, .2), transparent 30%),
+    linear-gradient(180deg, #020b1d 0%, #031124 100%);
+  border-right: 1px solid rgba(112, 158, 222, .18);
   display: flex; flex-direction: column; height: 100%;
 }
 .sidebar-logo {
   display: flex; align-items: center; gap: 10px;
-  padding: 20px 20px 16px; border-bottom: 1px solid rgba(255,255,255,.06);
+  padding: 28px 24px 20px; border-bottom: 1px solid rgba(112, 158, 222, .12);
 }
 .logo-icon {
-  width: 32px; height: 32px; background: var(--color-accent);
-  border-radius: 8px; display: flex; align-items: center; justify-content: center;
-  color: #fff; font-family: var(--font-heading); font-weight: 700; font-size: 16px;
+  position: relative;
+  width: 28px; height: 28px;
+  display: flex; align-items: center; justify-content: center;
+  background: linear-gradient(135deg, #25d3ff, #315dff);
+  clip-path: polygon(50% 0, 93% 25%, 93% 75%, 50% 100%, 7% 75%, 7% 25%);
+  box-shadow: 0 0 22px rgba(49, 199, 255, .45);
 }
-.logo-text { font-family: var(--font-heading); font-weight: 700; font-size: 18px; color: #fff; }
-.nav-list { list-style: none; padding: 12px 10px; flex: 1; }
+.logo-icon span {
+  width: 13px;
+  height: 15px;
+  border: 3px solid rgba(255,255,255,.78);
+  border-top: 0;
+  border-radius: 0 0 9px 9px;
+  transform: translateY(2px);
+}
+.logo-text { font-family: var(--font-heading); font-weight: 800; font-size: 16px; color: #fff; white-space: nowrap; }
+.logo-text em { color: #75a3ff; font-style: normal; font-weight: 800; }
+.nav-list { list-style: none; padding: 16px 12px; flex: 1; }
 .nav-item {
   display: flex; align-items: center; gap: 10px;
-  padding: 9px 12px; border-radius: var(--radius-sm);
-  color: #94a3b8; text-decoration: none; font-size: 14px; font-weight: 500;
+  padding: 12px 14px; border-radius: 8px;
+  color: #a8bad7; text-decoration: none; font-size: 14px; font-weight: 700;
   transition: all .15s;
 }
-.nav-item:hover { background: var(--color-sidebar-hover); color: #e2e8f0; }
-.nav-item.active { background: var(--color-accent); color: #fff; }
-.nav-icon { font-size: 16px; }
+.nav-item:hover { background: var(--color-sidebar-hover); color: #eaf2ff; }
+.nav-item.active {
+  background: linear-gradient(90deg, rgba(47, 114, 255, .9), rgba(47, 114, 255, .26));
+  color: #fff;
+  box-shadow: inset 3px 0 0 #31c7ff, 0 12px 26px rgba(47, 114, 255, .16);
+}
+.nav-icon { font-size: 17px; color: inherit; }
 .sidebar-footer {
-  padding: 14px 10px 18px; border-top: 1px solid rgba(255,255,255,.06);
+  margin: 0 12px 16px;
+  padding: 14px 12px;
+  border: 1px solid rgba(112, 158, 222, .18);
+  border-radius: 10px;
+  background: rgba(7, 28, 62, .58);
   display: flex; align-items: center; gap: 8px;
 }
 .user-info { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; }
 .avatar {
-  width: 32px; height: 32px; border-radius: 50%; background: #334155;
+  width: 32px; height: 32px; border-radius: 50%; background: linear-gradient(135deg, #17386f, #2f72ff);
   display: flex; align-items: center; justify-content: center;
-  color: #94a3b8; font-size: 13px; font-weight: 600; flex-shrink: 0;
+  color: #fff; font-size: 13px; font-weight: 700; flex-shrink: 0;
 }
 .user-detail { min-width: 0; }
-.username { font-size: 13px; color: #e2e8f0; font-weight: 500; truncate: ellipsis; white-space: nowrap; overflow: hidden; }
-.user-role { font-size: 11px; color: #64748b; }
+.username { font-size: 13px; color: #e2e8f0; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; overflow: hidden; }
+.user-role { font-size: 11px; color: #7891b8; }
 .logout-btn {
   background: none; border: none; cursor: pointer;
   color: #64748b; padding: 4px; border-radius: 4px;

@@ -77,16 +77,16 @@ function stepLabel(step: string) {
 </script>
 
 <style scoped>
-.agent-trace-panel { height: 100%; display: flex; flex-direction: column; border-top: 1px solid var(--color-border); }
+.agent-trace-panel { height: 100%; display: flex; flex-direction: column; border-top: 1px solid var(--color-border); background: rgba(7, 28, 62, .32); }
 .panel-header {
   display: flex; align-items: center; gap: 7px; padding: 14px 16px 10px;
-  font-size: 13px; font-weight: 600; color: var(--color-text-secondary);
+  font-size: 13px; font-weight: 900; color: var(--color-text-secondary);
   border-bottom: 1px solid var(--color-border);
 }
 .intent {
-  margin-left: auto; padding: 2px 7px; border-radius: 4px;
-  background: var(--color-accent-light); color: var(--color-accent);
-  font-size: 11px; font-weight: 700;
+  margin-left: auto; padding: 2px 7px; border-radius: 6px;
+  background: rgba(47, 114, 255, .16); color: #7db4ff;
+  font-size: 11px; font-weight: 900;
 }
 .agent-meta { display: grid; grid-template-columns: 1fr 1fr; border-bottom: 1px solid var(--color-border); }
 .meta-item { padding: 10px 14px; display: flex; flex-direction: column; gap: 3px; }
@@ -104,7 +104,7 @@ function stepLabel(step: string) {
 .trace-list { flex: 1; overflow-y: auto; padding: 12px 14px; display: flex; flex-direction: column; gap: 12px; }
 .trace-step { display: grid; grid-template-columns: 24px 1fr; gap: 9px; }
 .step-index {
-  width: 22px; height: 22px; border-radius: 50%; background: var(--color-bg);
+  width: 22px; height: 22px; border-radius: 50%; background: rgba(47, 114, 255, .18);
   border: 1px solid var(--color-border); color: var(--color-text-secondary);
   display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700;
 }
