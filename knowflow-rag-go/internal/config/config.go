@@ -11,6 +11,7 @@ import (
 type Config struct {
 	Port              string
 	DBDSN             string
+	InternalToken     string
 	LLMProvider       string
 	LLMAPIKey         string
 	LLMBaseURL        string
@@ -30,6 +31,7 @@ func Load() *Config {
 	return &Config{
 		Port:           getEnv("RAG_PORT", "8090"),
 		DBDSN:          getEnv("RAG_DB_DSN", ""),
+		InternalToken:  getEnv("RAG_INTERNAL_TOKEN", ""),
 		LLMProvider:    getEnv("RAG_LLM_PROVIDER", "mock"),
 		LLMAPIKey:      getEnv("RAG_LLM_API_KEY", ""),
 		LLMBaseURL:     getEnv("RAG_LLM_BASE_URL", ""),
@@ -53,6 +55,9 @@ func (c *Config) Validate() error {
 	}
 	if c.DBDSN == "" {
 		return fmt.Errorf("RAG_DB_DSN 不能为空")
+	}
+	if c.InternalToken == "" {
+		return fmt.Errorf("RAG_INTERNAL_TOKEN 不能为空")
 	}
 	if c.DefaultTopK <= 0 {
 		return fmt.Errorf("RAG_DEFAULT_TOP_K 必须大于 0")
